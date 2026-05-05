@@ -132,8 +132,24 @@ app.get("/", (req, res) => {
   });
 });
 
+app.get("/locations", (req, res) => {
+  res.json({
+    count: locations.length,
+    locations
+  });
+});
+
 app.get("/notams/:indicador", async (req, res) => {
   const indicador = req.params.indicador.toUpperCase();
+
+  if (!validIndicators.has(indicador)) {
+    return res.status(400).json({
+      error: "Indicador inválido",
+      indicador,
+      message: "El indicador no existe en la lista de lugares soportados.",
+      available_endpoint: "/locations"
+    });
+  }
 
   const cached = cache.get(indicador);
 
