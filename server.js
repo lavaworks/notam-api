@@ -1,11 +1,23 @@
+// notam-api — server.js
+//
+// v2: scrapeo proactivo en background + respuesta siempre desde cache.
+//
+// Antes: cada request a /notams/:indicador scrapeaba ANAC (con cache 5 min).
+// Ahora: un loop interno scrapea TODAS las locations en ronda continua y los
+// endpoints leen de memoria → respuesta en milisegundos, siempre.
+// Si un indicador todavía no está cacheado (recién arrancó el server),
+// se scrapea on-demand una sola vez como fallback.
+
 import express from "express";
 import * as cheerio from "cheerio";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const cache = new Map();
-const CACHE_TIME_MS = 5 * 60 * 1000; // 5 minutos
+// ── Configuración del refresher ──────────────────────────────────────────
+const REFRESH_PAUSE_MS = 5 * 60 * 1000; // pausa entre pasadas completas
+const DELAY_BETWEEN_MS = 1500;          // pausa entre locations (ANAC devuelve
+                                        // 500 si se le pega muy seguido)
 
 const locations = [
   { indicador: "AER", nombre: "AEROPARQUE J. NEWBERY", tipo: "AERODROMO" },
@@ -73,6 +85,15 @@ const locations = [
 
 const validIndicators = new Set(locations.map(item => item.indicador));
 
+// ── Cache en memoria ─────────────────────────────────────────────────────
+// indicador → { data, timestamp }   (data = respuesta lista para servir)
+const cache = new Map();
+// indicador → mensaje del último error de scrapeo (si falló)
+const scrapeErrors = new Map();
+const startedAt = Date.now();
+
+// ── Parser (sin cambios) ─────────────────────────────────────────────────
+
 function parseNotamHtml(html) {
   const $ = cheerio.load(html);
   const notams = [];
@@ -124,11 +145,100 @@ function parseNotamHtml(html) {
   return notams;
 }
 
+// ── Scraper de UN indicador ──────────────────────────────────────────────
+
+async function scrapeNotams(indicador) {
+  const response = await fetch("https://ais.anac.gob.ar/notam/pib", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+      "X-Requested-With": "XMLHttpRequest",
+      "Referer": "https://ais.anac.gob.ar/notam",
+      "User-Agent": "NotamApi/2.0"
+    },
+    body: new URLSearchParams({ indicador })
+  });
+
+  if (!response.ok) {
+    throw new Error(`ANAC respondió con status ${response.status}`);
+  }
+
+  const html = await response.text();
+  const notams = parseNotamHtml(html);
+
+  return {
+    source: "ANAC AIS",
+    indicador,
+    retrieved_at: new Date().toISOString(),
+    count: notams.length,
+    notams,
+    warning: "Información de referencia. No reemplaza briefing oficial ARO-AIS."
+  };
+}
+
+// Scrapea un indicador y actualiza el cache. ANAC devuelve 500 de forma
+// intermitente, así que ante un fallo se reintenta UNA vez tras 2 s.
+// Si vuelve a fallar, se conserva el dato anterior (stale) y se registra
+// el error; la próxima pasada del loop vuelve a intentar.
+async function refreshOne(indicador) {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const data = await scrapeNotams(indicador);
+      cache.set(indicador, { data, timestamp: Date.now() });
+      scrapeErrors.delete(indicador);
+      return;
+    } catch (error) {
+      if (attempt === 2) {
+        scrapeErrors.set(indicador, error.message);
+        console.error(`[refresher] ${indicador}: ${error.message}`);
+      } else {
+        await sleep(5000);
+      }
+    }
+  }
+}
+
+// ── Loop de refresco en background ───────────────────────────────────────
+// Pasada completa por las 61 locations (en serie, con pausa) → espera
+// REFRESH_PAUSE_MS → repite. Nunca se superponen dos pasadas.
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function refresherLoop() {
+  while (true) {
+    const t0 = Date.now();
+    for (const loc of locations) {
+      await refreshOne(loc.indicador);
+      await sleep(DELAY_BETWEEN_MS);
+    }
+    const secs = Math.round((Date.now() - t0) / 1000);
+    console.log(`[refresher] pasada completa: ${locations.length} locations en ${secs}s (${scrapeErrors.size} errores)`);
+    await sleep(REFRESH_PAUSE_MS);
+  }
+}
+
+// ── Endpoints ────────────────────────────────────────────────────────────
+
 app.get("/", (req, res) => {
   res.json({
     status: "ok",
     service: "NOTAM API",
     example: "/notams/MOR"
+  });
+});
+
+// Para keep-alive (UptimeRobot) y monitoreo.
+app.get("/health", (req, res) => {
+  const timestamps = [...cache.values()].map(e => e.timestamp);
+  res.json({
+    ok: true,
+    uptime_s: Math.round((Date.now() - startedAt) / 1000),
+    locations: locations.length,
+    cached: cache.size,
+    oldest_cache_s: timestamps.length
+      ? Math.round((Date.now() - Math.min(...timestamps)) / 1000)
+      : null,
+    scrape_errors: scrapeErrors.size
   });
 });
 
@@ -151,62 +261,32 @@ app.get("/notams/:indicador", async (req, res) => {
     });
   }
 
-  const cached = cache.get(indicador);
-
-  if (cached && Date.now() - cached.timestamp < CACHE_TIME_MS) {
-    return res.json({
-      ...cached.data,
-      cache: true
-    });
+  // Fallback: si el loop todavía no llegó a este indicador (server recién
+  // despierto), scrapear on-demand una vez.
+  if (!cache.has(indicador)) {
+    await refreshOne(indicador);
   }
 
-  try {
-    const response = await fetch("https://ais.anac.gob.ar/notam/pib", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-        "X-Requested-With": "XMLHttpRequest",
-        "Referer": "https://ais.anac.gob.ar/notam",
-        "User-Agent": "NotamApi/1.0"
-      },
-      body: new URLSearchParams({
-        indicador
-      })
-    });
+  const entry = cache.get(indicador);
 
-    if (!response.ok) {
-      throw new Error(`ANAC respondió con status ${response.status}`);
-    }
-
-    const html = await response.text();
-    const notams = parseNotamHtml(html);
-
-    const data = {
-      source: "ANAC AIS",
-      indicador,
-      retrieved_at: new Date().toISOString(),
-      count: notams.length,
-      notams,
-      warning: "Información de referencia. No reemplaza briefing oficial ARO-AIS."
-    };
-
-    cache.set(indicador, {
-      timestamp: Date.now(),
-      data
-    });
-
-    res.json({
-      ...data,
-      cache: false
-    });
-  } catch (error) {
-    res.status(500).json({
+  if (!entry) {
+    // Ni el loop ni el on-demand pudieron obtenerlo.
+    return res.status(500).json({
       error: "No se pudieron obtener los NOTAM",
-      detail: error.message
+      detail: scrapeErrors.get(indicador) || "sin datos"
     });
   }
+
+  res.json({
+    ...entry.data,
+    cache: true,
+    stale: scrapeErrors.has(indicador),
+    cache_age_s: Math.round((Date.now() - entry.timestamp) / 1000)
+  });
 });
 
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en puerto ${PORT}`);
+  // Arrancar el scrapeo proactivo (no bloquea el listen).
+  refresherLoop();
 });
