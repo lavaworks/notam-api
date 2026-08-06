@@ -1,12 +1,35 @@
 // notam-api — server.js
 //
-// v2: scrapeo proactivo en background + respuesta siempre desde cache.
+// v3 (2026-08-06): la lista de lugares se lee de ANAC, ya no está hardcodeada.
 //
-// Antes: cada request a /notams/:indicador scrapeaba ANAC (con cache 5 min).
-// Ahora: un loop interno scrapea TODAS las locations en ronda continua y los
-// endpoints leen de memoria → respuesta en milisegundos, siempre.
-// Si un indicador todavía no está cacheado (recién arrancó el server),
-// se scrapea on-demand una sola vez como fallback.
+// EL PROBLEMA QUE ARREGLA
+// -----------------------
+// La v2 tenía 61 indicadores fijos en el código y trataba cualquier fallo
+// como error, conservando el dato viejo. Eso produjo dos bugs serios:
+//
+//  1. ANAC dice, textual, en su página: "El control de selección muestra
+//     únicamente lugares que registran notams activos. Los lugares sin
+//     novedades activas no se incluyen en la lista." O sea que pedir un
+//     lugar sin novedades NO devuelve vacío: devuelve HTTP 500. La v2 lo
+//     contaba como fallo, se quedaba con el NOTAM anterior y lo servía
+//     como si siguiera vigente. Al detectarlo había datos de 13 días
+//     presentados como actuales.
+//
+//  2. Al revés: ANAC publicaba 77 lugares con novedades activas y la app
+//     sólo consultaba 61. Faltaban 33, casi todos de aviación general
+//     —Saladillo, Las Flores, Pehuajó, Punta Indio, San Pedro, Balcarce—
+//     y para esos la app respondía "sin NOTAM" habiendo NOTAM.
+//
+// LA SOLUCIÓN
+// -----------
+// Cada pasada se lee primero el selector de ANAC, que es la lista
+// autoritativa del momento. De ahí salen tres estados bien distintos:
+//
+//   · está en la lista y se pudo scrapear  → NOTAMs
+//   · NO está en la lista                  → ANAC no publica novedades
+//   · está en la lista pero falló          → dato viejo, marcado stale
+//
+// El segundo caso es el que antes se confundía con el tercero.
 
 import express from "express";
 import * as cheerio from "cheerio";
@@ -14,161 +37,96 @@ import * as cheerio from "cheerio";
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ── Configuración del refresher ──────────────────────────────────────────
 const REFRESH_PAUSE_MS = 5 * 60 * 1000; // pausa entre pasadas completas
-const DELAY_BETWEEN_MS = 1500;          // pausa entre locations (ANAC devuelve
-                                        // 500 si se le pega muy seguido)
+const DELAY_BETWEEN_MS = 1500;          // ANAC devuelve 500 si se le pega seguido
+const LIST_URL = "https://ais.anac.gob.ar/notam";
+const PIB_URL  = "https://ais.anac.gob.ar/notam/pib";
 
-const locations = [
-  { indicador: "AER", nombre: "AEROPARQUE J. NEWBERY", tipo: "AERODROMO" },
-  { indicador: "---", nombre: "AVISOS A TODAS LAS FIRS", tipo: "TODAS_LAS_FIRS" },
-  { indicador: "-VF", nombre: "AVISOS FIR COMODORO", tipo: "FIR" },
-  { indicador: "-CF", nombre: "AVISOS FIR CORDOBA", tipo: "FIR" },
-  { indicador: "-EF", nombre: "AVISOS FIR EZEIZA", tipo: "FIR" },
-  { indicador: "-MF", nombre: "AVISOS FIR MENDOZA", tipo: "FIR" },
-  { indicador: "-RR", nombre: "AVISOS FIR RESISTENCIA", tipo: "FIR" },
-  { indicador: "BCA", nombre: "BAHIA BLANCA/CTE ESPORA", tipo: "AERODROMO" },
-  { indicador: "BGI", nombre: "BERAZATEGUI/ALAS DE MALVINAS", tipo: "AERODROMO" },
-  { indicador: "CAT", nombre: "CATAMARCA", tipo: "AERODROMO" },
-  { indicador: "IGU", nombre: "CATARATAS DEL IGUAZU / M. C. E. KRAUSE", tipo: "AERODROMO" },
-  { indicador: "CLN", nombre: "COLON/ENTRE RIOS", tipo: "AERODROMO" },
-  { indicador: "CRV", nombre: "COMODORO RIVADAVIA/GRAL. E. MOSCONI", tipo: "AERODROMO" },
-  { indicador: "CDU", nombre: "CONCEPCIÓN DEL URUGUAY", tipo: "AERODROMO" },
-  { indicador: "DIA", nombre: "CONCORDIA/COMODORO PIERRESTEGUI", tipo: "AERODROMO" },
-  { indicador: "ESC", nombre: "CORDOBA/ESCUELA DE AVIACION MILITAR", tipo: "AERODROMO" },
-  { indicador: "CBA", nombre: "CORDOBA/ING. AER. A. L. V. TARAVELLA", tipo: "AERODROMO" },
-  { indicador: "CRR", nombre: "CORRIENTES", tipo: "AERODROMO" },
-  { indicador: "ECA", nombre: "EL CALAFATE", tipo: "AERODROMO" },
-  { indicador: "PAL", nombre: "EL PALOMAR", tipo: "AERODROMO" },
-  { indicador: "EPZ", nombre: "ESPERANZA", tipo: "AERODROMO" },
-  { indicador: "ESQ", nombre: "ESQUEL/BRIGADIER GENERAL ANTONIO PARODI", tipo: "AERODROMO" },
-  { indicador: "EZE", nombre: "EZEIZA/MINISTRO PISTARINI", tipo: "AERODROMO" },
-  { indicador: "FSA", nombre: "FORMOSA", tipo: "AERODROMO" },
-  { indicador: "GPI", nombre: "GENERAL PICO", tipo: "AERODROMO" },
-  { indicador: "GOY", nombre: "GOYA", tipo: "AERODROMO" },
-  { indicador: "JUJ", nombre: "JUJUY/GOBERNADOR GUZMAN", tipo: "AERODROMO" },
-  { indicador: "PDA", nombre: "JUJUY/PUERTA DE AVALOS", tipo: "AERODROMO" },
-  { indicador: "PTA", nombre: "LA PLATA", tipo: "AERODROMO" },
-  { indicador: "LAR", nombre: "LA RIOJA/CAP. VICENTE A. ALMONACID", tipo: "AERODROMO" },
-  { indicador: "MLG", nombre: "MALARGÜE", tipo: "AERODROMO" },
-  { indicador: "MDP", nombre: "MAR DEL PLATA/ASTOR PIAZZOLLA", tipo: "AERODROMO" },
-  { indicador: "MAT", nombre: "MATANZA", tipo: "AERODROMO" },
-  { indicador: "DOZ", nombre: "MENDOZA/EL PLUMERILLO", tipo: "AERODROMO" },
-  { indicador: "MOR", nombre: "MORON/ PRESIDENTE RIVADAVIA", tipo: "AERODROMO" },
-  { indicador: "PAR", nombre: "PARANA/GRAL. URQUIZA", tipo: "AERODROMO" },
-  { indicador: "LIB", nombre: "PASO DE LOS LIBRES", tipo: "AERODROMO" },
-  { indicador: "DRY", nombre: "PUERTO MADRYN/EL TEHUELCHE", tipo: "AERODROMO" },
-  { indicador: "ILM", nombre: "QUILMES", tipo: "AERODROMO" },
-  { indicador: "SIS", nombre: "RESISTENCIA", tipo: "AERODROMO" },
-  { indicador: "TRC", nombre: "RIO CUARTO/AREA DE MATERIAL", tipo: "AERODROMO" },
-  { indicador: "GAL", nombre: "RIO GALLEGOS/PILOTO CIVIL N. FERNANDEZ", tipo: "AERODROMO" },
-  { indicador: "GRA", nombre: "RIO GRANDE", tipo: "AERODROMO" },
-  { indicador: "ROS", nombre: "ROSARIO/ ISLAS MALVINAS", tipo: "AERODROMO" },
-  { indicador: "SAL", nombre: "SALTA", tipo: "AERODROMO" },
-  { indicador: "BAR", nombre: "SAN CARLOS DE BARILOCHE", tipo: "AERODROMO" },
-  { indicador: "FDO", nombre: "SAN FERNANDO", tipo: "AERODROMO" },
-  { indicador: "JUA", nombre: "SAN JUAN", tipo: "AERODROMO" },
-  { indicador: "UIS", nombre: "SAN LUIS/BRIGADIER MAYOR D. CESAR RAUL OJEDA", tipo: "AERODROMO" },
-  { indicador: "CHP", nombre: "SAN MARTIN DE LOS ANDES/AVIADOR C. CAMPOS", tipo: "AERODROMO" },
-  { indicador: "SNY", nombre: "SAN NICOLAS DE LOS ARROYOS", tipo: "AERODROMO" },
-  { indicador: "SRA", nombre: "SAN RAFAEL/S. A. SANTIAGO GERMANO", tipo: "AERODROMO" },
-  { indicador: "SVO", nombre: "SANTA FE/SAUCE VIEJO", tipo: "AERODROMO" },
-  { indicador: "OSA", nombre: "SANTA ROSA", tipo: "AERODROMO" },
-  { indicador: "DIO", nombre: "TANDIL/COMANDANTE EDUARDO A. OLIVERO", tipo: "AERODROMO" },
-  { indicador: "TRH", nombre: "TERMAS DE RIO HONDO", tipo: "AERODROMO" },
-  { indicador: "TRE", nombre: "TRELEW/ALMIRANTE ZAR", tipo: "AERODROMO" },
-  { indicador: "TUC", nombre: "TUCUMAN/TEN. BENJAMIN MATIENZO", tipo: "AERODROMO" },
-  { indicador: "USU", nombre: "USHUAIA/MALVINAS ARGENTINAS", tipo: "AERODROMO" },
-  { indicador: "VIE", nombre: "VIEDMA/GOBERNADOR CASTELLO", tipo: "AERODROMO" },
-  { indicador: "VMR", nombre: "VILLA MARIA/AEROPUERTO REGIONAL", tipo: "AERODROMO" }
-];
-
-const validIndicators = new Set(locations.map(item => item.indicador));
-
-// ── Cache en memoria ─────────────────────────────────────────────────────
-// indicador → { data, timestamp }   (data = respuesta lista para servir)
-const cache = new Map();
-// indicador → mensaje del último error de scrapeo (si falló)
-const scrapeErrors = new Map();
+// ── Estado en memoria ────────────────────────────────────────────────────
+const cache = new Map();          // indicador → { data, timestamp }
+const scrapeErrors = new Map();   // indicador → último error real
+let locations = new Map();        // indicador → nombre (lista viva de ANAC)
+let locationsUpdatedAt = null;
 const startedAt = Date.now();
 
-// ── Parser (sin cambios) ─────────────────────────────────────────────────
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// ── Lista de lugares con novedades activas ───────────────────────────────
+
+async function fetchLocations() {
+  const res = await fetch(LIST_URL, { headers: { "User-Agent": "NotamApi/3.0" } });
+  if (!res.ok) throw new Error(`ANAC lista respondió ${res.status}`);
+
+  const $ = cheerio.load(await res.text());
+  const found = new Map();
+  $("select option").each((_, o) => {
+    const value = ($(o).attr("value") || "").trim();
+    const text = $(o).text().replace(/\s+/g, " ").trim();
+    if (value && value !== "Seleccione un lugar") found.set(value, text);
+  });
+  if (found.size === 0) throw new Error("no se encontró ninguna opción en el selector");
+  return found;
+}
+
+// Si la lista falla se CONSERVA la anterior: quedarse sin lista sería peor
+// que tenerla algo vieja, porque dejaría de scrapearse todo.
+async function refreshLocations() {
+  try {
+    locations = await fetchLocations();
+    locationsUpdatedAt = Date.now();
+    console.log(`[locations] ${locations.size} lugares con novedades activas`);
+  } catch (e) {
+    console.error(`[locations] falló, se conserva la anterior: ${e.message}`);
+  }
+}
+
+// ── Parser ───────────────────────────────────────────────────────────────
 
 function parseNotamHtml(html) {
   const $ = cheerio.load(html);
   const notams = [];
 
   $("#pibdata tr").each((_, row) => {
-    const place = $(row)
-      .find("td#place p")
-      .map((_, p) => $(p).text().trim())
-      .get()
-      .filter(Boolean);
-
-    const info = $(row)
-      .find("td#info p")
-      .map((_, p) => $(p).text().trim())
-      .get()
-      .filter(Boolean);
+    const place = $(row).find("td#place p")
+      .map((_, p) => $(p).text().trim()).get().filter(Boolean);
+    const info = $(row).find("td#info p")
+      .map((_, p) => $(p).text().trim()).get().filter(Boolean);
 
     const numero = place[0] || null;
     const lugar = place[1] || null;
     const indicador = place[2]?.replace(/[()]/g, "") || null;
-
-    const desde = info
-      .find(t => t.startsWith("Desde:"))
-      ?.replace("Desde:", "")
-      .trim() || null;
-
-    const hasta = info
-      .find(t => t.startsWith("Hasta:"))
-      ?.replace("Hasta:", "")
-      .trim() || null;
-
+    const desde = info.find(t => t.startsWith("Desde:"))?.replace("Desde:", "").trim() || null;
+    const hasta = info.find(t => t.startsWith("Hasta:"))?.replace("Hasta:", "").trim() || null;
     const texto = info
       .filter(t => !t.startsWith("Desde:") && !t.startsWith("Hasta:"))
-      .join(" ")
-      .trim();
+      .join(" ").trim();
 
-    if (numero || texto) {
-      notams.push({
-        numero,
-        lugar,
-        indicador,
-        desde,
-        hasta,
-        texto
-      });
-    }
+    if (numero || texto) notams.push({ numero, lugar, indicador, desde, hasta, texto });
   });
 
   return notams;
 }
 
-// ── Scraper de UN indicador ──────────────────────────────────────────────
+// ── Scraper ──────────────────────────────────────────────────────────────
 
 async function scrapeNotams(indicador) {
-  const response = await fetch("https://ais.anac.gob.ar/notam/pib", {
+  const response = await fetch(PIB_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
       "X-Requested-With": "XMLHttpRequest",
-      "Referer": "https://ais.anac.gob.ar/notam",
-      "User-Agent": "NotamApi/2.0"
+      "Referer": LIST_URL,
+      "User-Agent": "NotamApi/3.0"
     },
     body: new URLSearchParams({ indicador })
   });
+  if (!response.ok) throw new Error(`ANAC respondió con status ${response.status}`);
 
-  if (!response.ok) {
-    throw new Error(`ANAC respondió con status ${response.status}`);
-  }
-
-  const html = await response.text();
-  const notams = parseNotamHtml(html);
-
+  const notams = parseNotamHtml(await response.text());
   return {
     source: "ANAC AIS",
     indicador,
+    nombre: locations.get(indicador) || null,
     retrieved_at: new Date().toISOString(),
     count: notams.length,
     notams,
@@ -176,15 +134,10 @@ async function scrapeNotams(indicador) {
   };
 }
 
-// Scrapea un indicador y actualiza el cache. ANAC devuelve 500 de forma
-// intermitente, así que ante un fallo se reintenta UNA vez tras 2 s.
-// Si vuelve a fallar, se conserva el dato anterior (stale) y se registra
-// el error; la próxima pasada del loop vuelve a intentar.
 async function refreshOne(indicador) {
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const data = await scrapeNotams(indicador);
-      cache.set(indicador, { data, timestamp: Date.now() });
+      cache.set(indicador, { data: await scrapeNotams(indicador), timestamp: Date.now() });
       scrapeErrors.delete(indicador);
       return;
     } catch (error) {
@@ -198,21 +151,29 @@ async function refreshOne(indicador) {
   }
 }
 
-// ── Loop de refresco en background ───────────────────────────────────────
-// Pasada completa por las 61 locations (en serie, con pausa) → espera
-// REFRESH_PAUSE_MS → repite. Nunca se superponen dos pasadas.
-
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+// ── Loop ─────────────────────────────────────────────────────────────────
 
 async function refresherLoop() {
   while (true) {
     const t0 = Date.now();
-    for (const loc of locations) {
-      await refreshOne(loc.indicador);
+    await refreshLocations();
+
+    // Los lugares que YA NO están en la lista perdieron sus novedades: se
+    // limpian del cache para no seguir sirviendo NOTAM vencidos.
+    for (const ind of [...cache.keys()]) {
+      if (!locations.has(ind)) {
+        cache.delete(ind);
+        scrapeErrors.delete(ind);
+      }
+    }
+
+    for (const indicador of locations.keys()) {
+      await refreshOne(indicador);
       await sleep(DELAY_BETWEEN_MS);
     }
+
     const secs = Math.round((Date.now() - t0) / 1000);
-    console.log(`[refresher] pasada completa: ${locations.length} locations en ${secs}s (${scrapeErrors.size} errores)`);
+    console.log(`[refresher] pasada: ${locations.size} lugares en ${secs}s (${scrapeErrors.size} con error)`);
     await sleep(REFRESH_PAUSE_MS);
   }
 }
@@ -220,59 +181,69 @@ async function refresherLoop() {
 // ── Endpoints ────────────────────────────────────────────────────────────
 
 app.get("/", (req, res) => {
-  res.json({
-    status: "ok",
-    service: "NOTAM API",
-    example: "/notams/MOR"
-  });
+  res.json({ status: "ok", service: "NOTAM API", version: 3, example: "/notams/AER" });
 });
 
-// Para keep-alive (UptimeRobot) y monitoreo.
 app.get("/health", (req, res) => {
   const timestamps = [...cache.values()].map(e => e.timestamp);
   res.json({
     ok: true,
+    version: 3,
     uptime_s: Math.round((Date.now() - startedAt) / 1000),
-    locations: locations.length,
+    locations_activas: locations.size,
+    locations_updated_s: locationsUpdatedAt
+      ? Math.round((Date.now() - locationsUpdatedAt) / 1000) : null,
     cached: cache.size,
     oldest_cache_s: timestamps.length
-      ? Math.round((Date.now() - Math.min(...timestamps)) / 1000)
-      : null,
-    scrape_errors: scrapeErrors.size
+      ? Math.round((Date.now() - Math.min(...timestamps)) / 1000) : null,
+    scrape_errors: scrapeErrors.size,
+    con_error: [...scrapeErrors.keys()]
   });
 });
 
 app.get("/locations", (req, res) => {
   res.json({
-    count: locations.length,
-    locations
+    count: locations.size,
+    updated_at: locationsUpdatedAt ? new Date(locationsUpdatedAt).toISOString() : null,
+    nota: "Sólo lugares con NOTAM activos. ANAC no lista los que no tienen novedades.",
+    locations: [...locations].map(([indicador, nombre]) => ({ indicador, nombre }))
   });
 });
 
 app.get("/notams/:indicador", async (req, res) => {
   const indicador = req.params.indicador.toUpperCase();
 
-  if (!validIndicators.has(indicador)) {
-    return res.status(400).json({
-      error: "Indicador inválido",
+  // Caso 1 — no está en la lista de ANAC.
+  //
+  // Es el caso que la v2 confundía con un fallo y por el que servía NOTAM
+  // vencidos. Pero OJO con el otro extremo: tampoco se puede afirmar "no
+  // hay NOTAM". Verificado el 2026-08-06 que ANAC publica novedades con
+  // inicio futuro (Aeroparque tenía una que arrancaba 19 días después) y
+  // aun así hubo un NOTAM real de Morón para el día siguiente que su sitio
+  // no mostraba. La ausencia en ANAC NO garantiza ausencia de NOTAM.
+  if (locations.size > 0 && !locations.has(indicador)) {
+    return res.json({
+      source: "ANAC AIS",
       indicador,
-      message: "El indicador no existe en la lista de lugares soportados.",
-      available_endpoint: "/locations"
+      retrieved_at: new Date().toISOString(),
+      count: 0,
+      notams: [],
+      no_publicado_por_anac: true,
+      nota: "ANAC no lista novedades activas para este lugar. Esto no garantiza que no existan: consultá ARO-AIS.",
+      warning: "Información de referencia. No reemplaza briefing oficial ARO-AIS."
     });
   }
 
-  // Fallback: si el loop todavía no llegó a este indicador (server recién
-  // despierto), scrapear on-demand una vez.
-  if (!cache.has(indicador)) {
-    await refreshOne(indicador);
-  }
+  // Caso 2 — está en la lista pero el loop todavía no llegó.
+  if (!cache.has(indicador)) await refreshOne(indicador);
 
   const entry = cache.get(indicador);
 
+  // Caso 3 — está en la lista y no se pudo obtener.
   if (!entry) {
-    // Ni el loop ni el on-demand pudieron obtenerlo.
-    return res.status(500).json({
+    return res.status(502).json({
       error: "No se pudieron obtener los NOTAM",
+      indicador,
       detail: scrapeErrors.get(indicador) || "sin datos"
     });
   }
@@ -287,6 +258,5 @@ app.get("/notams/:indicador", async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en puerto ${PORT}`);
-  // Arrancar el scrapeo proactivo (no bloquea el listen).
   refresherLoop();
 });
