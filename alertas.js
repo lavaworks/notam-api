@@ -63,6 +63,12 @@ export async function initDB() {
     );
   `);
 
+  // Columnas para los NOTAM de FIR (v5, 2026-08-09). Se agregan aparte para
+  // no romper las suscripciones ya guardadas.
+  for (const col of ["lat DOUBLE PRECISION", "lon DOUBLE PRECISION", "fir TEXT"]) {
+    await pool.query(`ALTER TABLE suscripciones ADD COLUMN IF NOT EXISTS ${col};`);
+  }
+
   console.log("[alertas] base lista");
   return true;
 }
@@ -86,11 +92,16 @@ export async function guardarSuscripcion({ token, aerodromos, reglas }) {
       await cliente.query(
         `INSERT INTO suscripciones
            (token, icao, indicador, vence, viento_kt, rafaga_kt,
-            visibilidad_m, techo_ft, tormenta, mejoras)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+            visibilidad_m, techo_ft, tormenta, mejoras, lat, lon, fir)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
         [token, a.icao.toUpperCase(), a.indicador.toUpperCase(), a.vence,
          r.vientoKt ?? 20, r.rafagaKt ?? 25, r.visibilidadM ?? 5000,
-         r.techoFt ?? 1500, r.tormenta ?? true, r.mejoras ?? true]
+         r.techoFt ?? 1500, r.tormenta ?? true, r.mejoras ?? true,
+         // Coordenadas y FIR para poder decidir si un aviso de FIR toca
+         // este aeródromo. Si la app no las manda (versión vieja), los
+         // NOTAM de FIR simplemente no se evalúan para él.
+         a.lat ?? null, a.lon ?? null,
+         a.fir ? String(a.fir).toUpperCase() : null]
       );
     }
     await cliente.query("COMMIT");
@@ -222,6 +233,64 @@ export function cambiosMetar(antes, ahora, reglas) {
       : { texto: "Pasó la tormenta", empeora: false });
   }
   return reglas.mejoras ? out : out.filter(c => c.empeora);
+}
+
+// ── NOTAM de FIR: ¿me afecta a mí? ────────────────────────────────────────
+//
+// ANAC publica bajo la FIR (indicador "-EF" para Ezeiza) avisos que no
+// figuran bajo el aeródromo pero que igual lo tocan: paracaidismo, vuelos
+// no tripulados, áreas restringidas temporarias, ejercicios. El caso que lo
+// destapó (2026-08-09): no había NOTAM para Morón pero sí uno de FIR Ezeiza
+// que lo afectaba.
+//
+// El problema es el volumen: la FIR Ezeiza tiene 41 avisos activos y casi
+// todos son de lugares lejanos. Avisarlos todos sería ruido puro. Por eso
+// se filtra por geografía: la mayoría del texto trae las coordenadas del
+// lugar y muchas veces el radio.
+
+const RADIO_FIR_NM = 25;
+
+/// Extrae la primera coordenada del texto de un NOTAM.
+/// Formato de ANAC: "COORD GEO 344436S/0583912W", a veces sin el "COORD GEO"
+/// y con separaciones distintas. Devuelve null si no hay ninguna.
+export function coordenadaDeNotam(texto) {
+  if (!texto) return null;
+  const m = /(\d{2})(\d{2})(\d{2})(?:[.,]\d+)?\s*([NS])\s*\/?\s*(\d{3})(\d{2})(\d{2})(?:[.,]\d+)?\s*([EW])/
+    .exec(texto.toUpperCase());
+  if (!m) return null;
+  const lat = (+m[1] + m[2] / 60 + m[3] / 3600) * (m[4] === "S" ? -1 : 1);
+  const lon = (+m[5] + m[6] / 60 + m[7] / 3600) * (m[8] === "W" ? -1 : 1);
+  if (!isFinite(lat) || !isFinite(lon)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  return { lat, lon };
+}
+
+/// Radio declarado en el texto ("RDO 2NM"), o 0 si no dice.
+export function radioDeNotam(texto) {
+  const m = /RDO\s*(\d{1,3})\s*NM/i.exec(texto || "");
+  return m ? +m[1] : 0;
+}
+
+export function distanciaNM(a, b) {
+  const R = 3440.065, p = Math.PI / 180;
+  const c = Math.sin(a.lat * p) * Math.sin(b.lat * p)
+          + Math.cos(a.lat * p) * Math.cos(b.lat * p) * Math.cos((b.lon - a.lon) * p);
+  return R * Math.acos(Math.min(1, Math.max(-1, c)));
+}
+
+/// ¿Este NOTAM de FIR le importa a un aeródromo en (lat, lon)?
+///
+/// Devuelve { afecta, motivo }. Cuando NO hay coordenadas se responde que sí
+/// con motivo "sin_coordenadas": no se puede saber si toca o no, y callarlo
+/// sería decidir por el piloto. Como sólo se avisa de NOTAM NUEVOS, son uno
+/// o dos por semana, no siete por día.
+export function notamFirAfecta(texto, aero, radioNM = RADIO_FIR_NM) {
+  const c = coordenadaDeNotam(texto);
+  if (!c) return { afecta: true, motivo: "sin_coordenadas" };
+  const d = distanciaNM(c, aero) - radioDeNotam(texto);
+  return d <= radioNM
+    ? { afecta: true, motivo: "cerca", distNM: Math.max(0, Math.round(d)) }
+    : { afecta: false };
 }
 
 // ── APNs ─────────────────────────────────────────────────────────────────

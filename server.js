@@ -217,6 +217,30 @@ async function procesarVigilancia() {
   const icaos = [...new Set(subs.map(s => s.icao))];
   const metars = await fetchMetars(icaos);
 
+  // ── NOTAM de FIR ──
+  //
+  // ANAC publica bajo la FIR ("-EF" Ezeiza) avisos que no figuran bajo el
+  // aeródromo pero que igual lo afectan. El caso que lo destapó: no había
+  // NOTAM para Morón pero sí uno de FIR Ezeiza que lo tocaba.
+  //
+  // Las altas se calculan UNA vez por FIR —son las mismas para todos— y
+  // después se filtra por cercanía para cada aeródromo, que es lo que
+  // cambia entre suscriptores.
+  const nuevosPorFir = new Map();
+  for (const fir of new Set(subs.map(s => s.fir).filter(Boolean))) {
+    const entrada = cache.get(fir);
+    if (!entrada || scrapeErrors.has(fir)) continue;
+    const previo = await alertas.estadoDe(fir);
+    const ahora = entrada.data.notams.filter(n => n.numero);
+    if (previo?.notams != null) {
+      const conocidos = new Set(previo.notams);
+      nuevosPorFir.set(fir, ahora.filter(n => !conocidos.has(n.numero)));
+    }
+    // La primera vez sólo se memoriza: sin estado previo, "todos son
+    // nuevos" y llegarían 40 notificaciones de golpe.
+    await alertas.guardarNotams(fir, ahora.map(n => n.numero));
+  }
+
   // Primero se resuelve el estado OBJETIVO de cada aeródromo —lo que pasó,
   // sin opinar—; recién después se evalúa contra los umbrales de cada
   // dispositivo. Los umbrales son personales: el límite de viento de un
@@ -278,11 +302,26 @@ async function procesarVigilancia() {
         ? `NOTAM nuevo: ${est.notamNuevos[0]}`
         : `${est.notamNuevos.length} NOTAM nuevos`);
     }
+
+    // Avisos de FIR que caen cerca de ESTE aeródromo. Los que no traen
+    // coordenadas se avisan igual: no se puede saber si tocan, y callarlos
+    // sería decidir por el piloto.
+    let firCerca = [];
+    if (s.fir && s.lat != null && s.lon != null) {
+      firCerca = (nuevosPorFir.get(s.fir) || []).filter(n =>
+        alertas.notamFirAfecta(n.texto, { lat: s.lat, lon: s.lon }).afecta);
+    }
+    if (firCerca.length) {
+      partes.push(firCerca.length === 1
+        ? `Aviso FIR: ${firCerca[0].numero}`
+        : `${firCerca.length} avisos FIR en tu zona`);
+    }
     const malos = cambiosClima.filter(x => x.empeora);
     partes.push(...(malos.length ? malos : cambiosClima).map(x => x.texto));
     if (partes.length === 0) continue;
 
-    const urgente = est.notamNuevos.length > 0 || malos.length > 0;
+    const urgente = est.notamNuevos.length > 0 || malos.length > 0
+                 || firCerca.length > 0;
     const res = await alertas.enviarPush(s.token, s.icao, partes.join(" · "), urgente);
 
     if (res.ok) {
