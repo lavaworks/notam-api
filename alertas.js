@@ -259,7 +259,12 @@ export function enviarPush(deviceToken, titulo, cuerpo, urgente = true) {
       aps: {
         alert: { title: titulo, body: cuerpo },
         sound: urgente ? "default" : undefined,
-        "interruption-level": urgente ? "time-sensitive" : "passive"
+        // "passive" no muestra banner ni aparece en la pantalla bloqueada:
+        // queda enterrado en el centro de notificaciones y el piloto no se
+        // entera nunca. Para las mejoras alcanza con "active", que se ve
+        // pero no suena — no hace falta despertar a nadie para avisarle
+        // que levantó el techo, pero tampoco esconderlo.
+        "interruption-level": urgente ? "time-sensitive" : "active"
       }
     });
 

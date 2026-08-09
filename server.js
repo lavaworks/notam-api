@@ -443,10 +443,12 @@ app.post("/watch", async (req, res) => {
 // Push de prueba a un dispositivo, para verificar la cadena entera sin
 // esperar a que cambie el clima de verdad.
 app.post("/watch/test", async (req, res) => {
-  const { token } = req.body || {};
+  const { token, urgente } = req.body || {};
   if (!token) return res.status(400).json({ error: "falta token" });
+  // Urgente por defecto: una prueba que no se ve no prueba nada.
   const r = await alertas.enviarPush(
-    token, "Oscar", "Prueba de notificación: la vigilancia está funcionando.", false);
+    token, "Oscar", "Prueba de notificación: la vigilancia está funcionando.",
+    urgente !== false);
   res.json(r);
 });
 
