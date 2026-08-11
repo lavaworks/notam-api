@@ -315,12 +315,41 @@ export function apnsConfigurado() {
             process.env.APNS_TEAM_ID && process.env.APNS_TOPIC);
 }
 
+/// Manda el push y, si Apple rechaza el token por venir del otro entorno,
+/// reintenta una vez contra el que corresponde.
+///
+/// POR QUÉ (2026-08-09): un build de Xcode registra token de SANDBOX y uno
+/// del App Store de PRODUCCIÓN. Con un solo entorno configurado, uno de los
+/// dos siempre falla con `BadDeviceToken`. Antes había que ir a Render a
+/// cambiar `APNS_ENV` para probar desde Xcode —y acordarse de volverlo a
+/// `prod` antes de publicar, que es un olvido carísimo: dejaría a todos los
+/// usuarios reales sin notificaciones sin que nadie se entere.
+///
+/// Con el reintento, los dos tipos de build funcionan siempre y la variable
+/// deja de ser una trampa.
 export function enviarPush(deviceToken, titulo, cuerpo, urgente = true) {
+  return enviarA(hostPreferido(), deviceToken, titulo, cuerpo, urgente)
+    .then(r => {
+      const rechazoDeEntorno =
+        r.status === 400 && /BadDeviceToken/i.test(r.detalle || "");
+      if (!rechazoDeEntorno) return r;
+      return enviarA(hostAlternativo(), deviceToken, titulo, cuerpo, urgente)
+        .then(r2 => r2.ok ? { ...r2, entornoAlternativo: true } : r);
+    });
+}
+
+function hostPreferido() {
+  return process.env.APNS_ENV === "sandbox"
+    ? "https://api.sandbox.push.apple.com" : "https://api.push.apple.com";
+}
+function hostAlternativo() {
+  return process.env.APNS_ENV === "sandbox"
+    ? "https://api.push.apple.com" : "https://api.sandbox.push.apple.com";
+}
+
+function enviarA(host, deviceToken, titulo, cuerpo, urgente) {
   return new Promise((resolve) => {
     if (!apnsConfigurado()) return resolve({ ok: false, motivo: "APNs sin configurar" });
-
-    const host = process.env.APNS_ENV === "sandbox"
-      ? "https://api.sandbox.push.apple.com" : "https://api.push.apple.com";
     const cliente = http2.connect(host);
     cliente.on("error", () => resolve({ ok: false, motivo: "conexión" }));
 
