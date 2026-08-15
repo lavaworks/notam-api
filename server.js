@@ -187,7 +187,18 @@ async function fetchMetars(icaos) {
     for (const linea of (await r.text()).split("\n")) {
       const l = linea.trim();
       if (!l) continue;
-      const icao = l.split(/\s+/)[0];
+      // OJO: las líneas vienen con el tipo adelante —"METAR SAAR 151200Z…"—
+      // así que el primer token NO es el indicador (2026-08-15).
+      //
+      // Éste fue el bug que dejó la vigilancia de clima muerta desde el
+      // día uno: se tomaba `split()[0]`, que daba "METAR", se exigía que
+      // midiera 4 caracteres y como mide 5 se descartaban TODOS. El mapa
+      // quedaba siempre vacío, nunca había un "antes" contra qué comparar
+      // y por eso no salió jamás una alerta de METAR. Los avisos de FIR
+      // sí llegaban, porque no pasan por acá.
+      let tokens = l.split(/\s+/);
+      if (tokens[0] === "METAR" || tokens[0] === "SPECI") tokens = tokens.slice(1);
+      const icao = tokens[0];
       if (icao && icao.length === 4) out.set(icao, l);
     }
   } catch (e) {
@@ -215,7 +226,13 @@ async function procesarVigilancia() {
   if (subs.length === 0) return;
 
   const icaos = [...new Set(subs.map(s => s.icao))];
-  const metars = await fetchMetars(icaos);
+
+  // El METAR se pide por ESTACIÓN, no por aeródromo. Luján no publica
+  // METAR: le corresponde el de Morón. Sin esto, la campanita en un campo
+  // chico no podía avisar nada de clima nunca (2026-08-15).
+  const estacionDe = s => (s.estacion || s.icao).toUpperCase();
+  const estaciones = [...new Set(subs.map(estacionDe))];
+  const metars = await fetchMetars(estaciones);
 
   // ── NOTAM de FIR ──
   //
@@ -248,6 +265,21 @@ async function procesarVigilancia() {
   // ameritar aviso para uno y no para otro.
   const porIcao = new Map();
 
+  // ── Clima, una vez por estación ──
+  // Se guarda con la estación como clave, así dos aeródromos que comparten
+  // METAR comparten también el estado: no se compara dos veces lo mismo.
+  const porEstacion = new Map();
+  for (const est of estaciones) {
+    const raw = metars.get(est);
+    if (!raw) { porEstacion.set(est, { antes: null, ahora: null }); continue; }
+    const previo = await alertas.estadoDe(est);
+    porEstacion.set(est, previo?.metar_raw
+      ? { antes: alertas.parseMetar(previo.metar_raw),
+          ahora: alertas.parseMetar(raw) }
+      : { antes: null, ahora: null });
+    await alertas.guardarMetar(est, raw);
+  }
+
   for (const icao of icaos) {
     const previo = await alertas.estadoDe(icao);
     const indicador = subs.find(s => s.icao === icao).indicador;
@@ -256,32 +288,54 @@ async function procesarVigilancia() {
     // Un NOTAM que desaparece casi siempre es un problema de la fuente, no
     // una novedad operativa. Avisar de bajas generaría un falso positivo
     // cada vez que ANAC falla.
+    //
+    // ANAC lista SÓLO los lugares con novedades activas, así que un
+    // aeródromo tranquilo no aparece y no tiene entrada en el cache. Eso
+    // hay que leerlo como "cero NOTAM", que es un dato, y no como "no sé
+    // nada", que es la ausencia de dato (2026-08-15).
+    //
+    // Tratarlo como ausencia era el segundo motivo por el que no llegaban
+    // avisos: en un campo chico —que casi nunca está en la lista— nunca se
+    // guardaba un estado previo, así que cuando por fin salía un NOTAM
+    // caía en la rama de "primera pasada, sólo memorizar" y se lo tragaba
+    // en silencio. El primer NOTAM de cada aeródromo tranquilo, que es
+    // justo el que importa, no se avisaba nunca.
+    //
+    // Los tres estados posibles, que ya distingue el scraper:
+    //   · en la lista y scrapeado bien → los números que trajo
+    //   · NO está en la lista          → [] (sin novedades activas)
+    //   · en la lista pero falló       → no se toca nada
     const entrada = cache.get(indicador);
+    const fallo = scrapeErrors.has(indicador);
     let notamNuevos = [];
-    if (entrada && !scrapeErrors.has(indicador)) {
-      const ahora = entrada.data.notams.map(n => n.numero).filter(Boolean);
-      if (previo?.notams != null) {
-        notamNuevos = ahora.filter(n => !previo.notams.includes(n));
+    if (!fallo) {
+      const ahora = entrada
+        ? entrada.data.notams.map(n => n.numero).filter(Boolean)
+        : (locations.has(indicador) ? null : []);
+      if (ahora != null) {
+        if (previo?.notams != null) {
+          notamNuevos = ahora.filter(n => !previo.notams.includes(n));
+        }
+        await alertas.guardarNotams(icao, ahora);
       }
-      await alertas.guardarNotams(icao, ahora);
     }
 
-    // ── METAR: se guardan los dos snapshots, sin evaluar todavía ──
-    const raw = metars.get(icao);
-    let antes = null, ahora = null;
-    if (raw) {
-      if (previo?.metar_raw) {
-        antes = alertas.parseMetar(previo.metar_raw);
-        ahora = alertas.parseMetar(raw);
-      }
-      await alertas.guardarMetar(icao, raw);
-    }
-
-    porIcao.set(icao, { notamNuevos, antes, ahora });
+    porIcao.set(icao, { notamNuevos });
   }
 
   // ── Ahora sí, por dispositivo y con SUS umbrales ──
-  for (const s of subs) {
+  //
+  // Si alguien vigila Luján y Morón a la vez, el METAR es el mismo y sin
+  // cuidado saldrían dos notificaciones idénticas. Se manda una sola: la
+  // primera que sale se anota acá y las siguientes del mismo dispositivo
+  // omiten la parte de clima —pero conservan sus NOTAM, que sí son propios
+  // de cada aeródromo—. Se ordena para que gane el aeródromo que ES la
+  // estación, que es donde el dato realmente se midió.
+  const climaYaAvisado = new Map();   // token → Set de estaciones
+  const ordenadas = [...subs].sort((a, b) =>
+    (a.icao === estacionDe(a) ? 0 : 1) - (b.icao === estacionDe(b) ? 0 : 1));
+
+  for (const s of ordenadas) {
     const est = porIcao.get(s.icao);
     if (!est) continue;
 
@@ -292,8 +346,12 @@ async function procesarVigilancia() {
       continue;
     }
 
-    const cambiosClima = (est.antes && est.ahora)
-      ? alertas.cambiosMetar(est.antes, est.ahora, s)
+    const estacion = estacionDe(s);
+    const clima = porEstacion.get(estacion) || {};
+    const yaSalio = climaYaAvisado.get(s.token)?.has(estacion) === true;
+
+    const cambiosClima = (!yaSalio && clima.antes && clima.ahora)
+      ? alertas.cambiosMetar(clima.antes, clima.ahora, s)
       : [];
 
     const partes = [];
@@ -317,14 +375,27 @@ async function procesarVigilancia() {
         : `${firCerca.length} avisos FIR en tu zona`);
     }
     const malos = cambiosClima.filter(x => x.empeora);
-    partes.push(...(malos.length ? malos : cambiosClima).map(x => x.texto));
+    const textosClima = (malos.length ? malos : cambiosClima).map(x => x.texto);
+    if (textosClima.length) {
+      // Se aclara de dónde salió el dato cuando no es del propio campo: en
+      // Luján el viento medido es el de Morón y el piloto tiene que poder
+      // pesarlo con esa distancia en la cabeza.
+      partes.push(estacion === s.icao
+        ? textosClima.join(" · ")
+        : `${textosClima.join(" · ")} (METAR ${estacion})`);
+    }
     if (partes.length === 0) continue;
 
     const urgente = est.notamNuevos.length > 0 || malos.length > 0
                  || firCerca.length > 0;
-    const res = await alertas.enviarPush(s.token, s.icao, partes.join(" · "), urgente);
+    const res = await alertas.enviarPush(
+      s.token, s.nombre || s.icao, partes.join(" · "), urgente);
 
     if (res.ok) {
+      if (textosClima.length) {
+        if (!climaYaAvisado.has(s.token)) climaYaAvisado.set(s.token, new Set());
+        climaYaAvisado.get(s.token).add(estacion);
+      }
       await alertas.marcarPush(s.token, s.icao);
     } else if (res.status === 410) {
       // Apple avisa que el token murió: la app se desinstaló.
@@ -372,14 +443,14 @@ async function refresherLoop() {
 // ── Endpoints ────────────────────────────────────────────────────────────
 
 app.get("/", (req, res) => {
-  res.json({ status: "ok", service: "NOTAM API", version: 4, example: "/notams/MOR" });
+  res.json({ status: "ok", service: "NOTAM API", version: 6, example: "/notams/MOR" });
 });
 
 app.get("/health", async (req, res) => {
   const timestamps = [...cache.values()].map(e => e.timestamp);
   res.json({
     ok: true,
-    version: 4,
+    version: 6,
     uptime_s: Math.round((Date.now() - startedAt) / 1000),
     locations_activas: locations.size,
     locations_updated_s: locationsUpdatedAt

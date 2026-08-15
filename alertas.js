@@ -65,7 +65,13 @@ export async function initDB() {
 
   // Columnas para los NOTAM de FIR (v5, 2026-08-09). Se agregan aparte para
   // no romper las suscripciones ya guardadas.
-  for (const col of ["lat DOUBLE PRECISION", "lon DOUBLE PRECISION", "fir TEXT"]) {
+  // `estacion` (2026-08-15): de qué aeródromo sale el METAR que le
+  // corresponde a éste. Los campos chicos —Luján, Lobos, Saladillo— no
+  // publican METAR propio: sin esto la vigilancia de clima sólo podía
+  // funcionar en los ~30 que tienen estación, y activar la campanita en
+  // Luján no avisaba nunca nada.
+  for (const col of ["lat DOUBLE PRECISION", "lon DOUBLE PRECISION", "fir TEXT",
+                     "estacion TEXT", "nombre TEXT"]) {
     await pool.query(`ALTER TABLE suscripciones ADD COLUMN IF NOT EXISTS ${col};`);
   }
 
@@ -92,8 +98,9 @@ export async function guardarSuscripcion({ token, aerodromos, reglas }) {
       await cliente.query(
         `INSERT INTO suscripciones
            (token, icao, indicador, vence, viento_kt, rafaga_kt,
-            visibilidad_m, techo_ft, tormenta, mejoras, lat, lon, fir)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+            visibilidad_m, techo_ft, tormenta, mejoras, lat, lon, fir,
+            estacion, nombre)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
         [token, a.icao.toUpperCase(), a.indicador.toUpperCase(), a.vence,
          r.vientoKt ?? 20, r.rafagaKt ?? 25, r.visibilidadM ?? 5000,
          r.techoFt ?? 1500, r.tormenta ?? true, r.mejoras ?? true,
@@ -101,7 +108,12 @@ export async function guardarSuscripcion({ token, aerodromos, reglas }) {
          // este aeródromo. Si la app no las manda (versión vieja), los
          // NOTAM de FIR simplemente no se evalúan para él.
          a.lat ?? null, a.lon ?? null,
-         a.fir ? String(a.fir).toUpperCase() : null]
+         a.fir ? String(a.fir).toUpperCase() : null,
+         // Si la app no manda estación (versión vieja) se usa el propio
+         // ICAO, que es el comportamiento anterior.
+         a.estacion ? String(a.estacion).toUpperCase() : null,
+         // El título del push: "SRDL" no se lee como Luján.
+         a.nombre ? String(a.nombre) : null]
       );
     }
     await cliente.query("COMMIT");
