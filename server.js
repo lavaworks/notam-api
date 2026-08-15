@@ -309,9 +309,15 @@ async function procesarVigilancia() {
     const fallo = scrapeErrors.has(indicador);
     let notamNuevos = [];
     if (!fallo) {
+      //
+      // El `locations.size > 0` no es paranoia: si la lista de ANAC falla
+      // entera, "no está en la lista" dejaría de significar "sin novedades"
+      // y pasaría a significar "no pudimos preguntar". Guardar [] ahí
+      // borraría los NOTAM conocidos y la pasada siguiente los avisaría
+      // como nuevos.
       const ahora = entrada
         ? entrada.data.notams.map(n => n.numero).filter(Boolean)
-        : (locations.has(indicador) ? null : []);
+        : (locations.size > 0 && !locations.has(indicador) ? [] : null);
       if (ahora != null) {
         if (previo?.notams != null) {
           notamNuevos = ahora.filter(n => !previo.notams.includes(n));
@@ -532,6 +538,22 @@ app.get("/notams/:indicador", async (req, res) => {
 // La app manda SIEMPRE su lista completa de aeródromos vigilados, no altas
 // y bajas sueltas: así el servidor no puede quedar desincronizado con lo
 // que el usuario ve en pantalla.
+
+// Qué tiene guardado la vigilancia de un aeródromo. Sirve para contestar
+// "¿por qué no me llegó nada?" sin adivinar: si `notams` es null, nunca se
+// guardó estado y el próximo NOTAM se avisaría; si es [], el estado está
+// tomado y una alta se detecta. No expone nada de nadie —el estado es el
+// mismo para todos los dispositivos, no hay tokens ni suscriptores acá—.
+app.get("/watch/estado/:icao", async (req, res) => {
+  if (!alertas.activo()) return res.status(503).json({ error: "vigilancia apagada" });
+  const icao = req.params.icao.toUpperCase();
+  const e = await alertas.estadoDe(icao);
+  res.json(e ? {
+    icao,
+    notams: e.notams, notams_ts: e.notams_ts,
+    metar_raw: e.metar_raw, metar_ts: e.metar_ts
+  } : { icao, estado: null });
+});
 
 app.post("/watch", async (req, res) => {
   if (!alertas.activo()) {
