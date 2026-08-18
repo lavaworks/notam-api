@@ -43,6 +43,9 @@
 import express from "express";
 import * as cheerio from "cheerio";
 import * as alertas from "./alertas.js";
+// Índice de cartas del AIP. Independiente de todo lo demás: no usa la base
+// de datos, así que sigue funcionando aunque la vigilancia esté apagada.
+import * as cartas from "./cartas.js";
 
 const app = express();
 app.use(express.json({ limit: "64kb" }));
@@ -467,6 +470,7 @@ app.get("/health", async (req, res) => {
     scrape_errors: scrapeErrors.size,
     // Cuáles fallan, para no tener que adivinar desde afuera.
     con_error: [...scrapeErrors.keys()],
+    cartas: cartas.estado(),
     vigilancia: {
       base: alertas.activo(),
       apns: alertas.apnsConfigurado(),
@@ -474,6 +478,8 @@ app.get("/health", async (req, res) => {
     }
   });
 });
+
+cartas.montar(app);
 
 app.get("/locations", (req, res) => {
   res.json({
@@ -585,6 +591,10 @@ app.post("/watch/test", async (req, res) => {
 });
 
 app.listen(PORT, async () => {
+  // Se baja el índice de cartas al arrancar para que el primer piloto que
+  // abra una ficha no espere los 6 MB. Si falla, no pasa nada: se reintenta
+  // en el primer pedido.
+  cartas.precalentar();
   console.log(`Servidor corriendo en puerto ${PORT}`);
   try {
     await alertas.initDB();
