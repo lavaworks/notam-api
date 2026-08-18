@@ -214,35 +214,98 @@ export function parseMetar(raw) {
   return s;
 }
 
+/// Cómo se escribe una visibilidad para que se entienda.
+///
+/// El corte va en 9999 y no en 10000: en un METAR "9999" ES el código de
+/// "10 km o más" — nadie reporta 10000. Con el corte en 10000 el aviso decía
+/// "9999 m", que además de feo invita a compararlo con el mínimo como si fuera
+/// una medición, cuando en realidad significa "todo bien".
+function fmtVis(m) {
+  return m >= 9999 ? "10 km o más" : `${m} m`;
+}
+
+/**
+ * QUÉ TIENE QUE DECIR UNA NOTIFICACIÓN DE CLIMA
+ * ---------------------------------------------
+ * Antes decía "Visibilidad 4000 m" y ya. Con eso el piloto no puede decidir
+ * nada: no sabe si mejoró o empeoró, ni de cuánto venía, ni si 4000 está bien
+ * o mal para él. Termina abriendo la app para enterarse de algo que la
+ * notificación podría haber dicho — y si está manejando o en la escuela, no la
+ * abre y se queda sin saber.
+ *
+ * Ahora cada aviso lleva las tres cosas que hacen falta para decidir sin abrir
+ * nada:
+ *
+ *   1. QUÉ PASÓ, con un verbo: "bajó", "mejoró", "levantó". El sentido del
+ *      cambio es lo primero que se lee y lo que más importa.
+ *   2. DE CUÁNTO A CUÁNTO: "10 km o más → 4000 m". Un número solo no dice si
+ *      es un desplome o un ajuste menor.
+ *   3. CONTRA QUÉ: "tu mínimo, 5000 m". El umbral es de cada piloto, así que
+ *      el mismo 4000 es grave para uno e indiferente para otro. Repetirlo es
+ *      lo que convierte el dato en una decisión.
+ *
+ * OJO: este texto tiene que ser IDÉNTICO al de `MetarChangeDetector.cambios`
+ * en `AerodromeWatch.swift`. La app muestra el mismo cambio en pantalla y el
+ * backend lo manda por push; si difieren, el piloto ve dos versiones de lo
+ * mismo y deja de confiar en las dos.
+ */
 export function cambiosMetar(antes, ahora, reglas) {
   const out = [];
-  const evaluar = (a, b, umbral, menorEsPeor, textoMal, textoBien) => {
+  // `arma` recibe si el estado nuevo es malo y devuelve el texto. Antes se le
+  // pasaban dos strings ya armados; ahora hace falta la función porque el
+  // texto depende de los dos valores y no sólo del nuevo.
+  const evaluar = (a, b, umbral, menorEsPeor, arma) => {
     const malA = menorEsPeor ? a < umbral : a > umbral;
     const malB = menorEsPeor ? b < umbral : b > umbral;
     if (malA === malB) return;
     if (!malB && !reglas.mejoras) return;
-    out.push({ texto: malB ? textoMal : textoBien, empeora: malB });
+    out.push({ texto: arma(malB), empeora: malB });
   };
 
-  evaluar(antes.viento, ahora.viento, reglas.viento_kt, false,
-    `Viento ${ahora.viento} kt, sobre tu límite de ${reglas.viento_kt}`,
-    `El viento bajó a ${ahora.viento} kt`);
+  evaluar(antes.viento, ahora.viento, reglas.viento_kt, false, mala =>
+    mala
+      ? `Viento subió: ${antes.viento} → ${ahora.viento} kt (tu límite, ${reglas.viento_kt})`
+      : `Viento bajó: ${antes.viento} → ${ahora.viento} kt (tu límite, ${reglas.viento_kt})`);
 
-  evaluar(antes.rafaga, ahora.rafaga, reglas.rafaga_kt, false,
-    `Ráfagas de ${ahora.rafaga} kt`, "Ya no hay ráfagas fuertes");
+  evaluar(antes.rafaga, ahora.rafaga, reglas.rafaga_kt, false, mala => {
+    // Igual que con el techo: cuando el valor de antes es 0 no hubo un cambio
+    // de intensidad, aparecieron. "Ráfagas: 0 → 34 kt" no es lo que pasó.
+    if (mala) {
+      return antes.rafaga === 0
+        ? `Aparecieron ráfagas de ${ahora.rafaga} kt (tu límite, ${reglas.rafaga_kt})`
+        : `Ráfagas: ${antes.rafaga} → ${ahora.rafaga} kt (tu límite, ${reglas.rafaga_kt})`;
+    }
+    // Sin ráfaga reportada el valor es 0, y "bajaron a 0 kt" se lee raro:
+    // lo que pasó es que dejaron de reportarse.
+    return ahora.rafaga === 0
+      ? `Ya no se reportan ráfagas (eran de ${antes.rafaga} kt)`
+      : `Ráfagas bajaron: ${antes.rafaga} → ${ahora.rafaga} kt (tu límite, ${reglas.rafaga_kt})`;
+  });
 
-  evaluar(antes.vis, ahora.vis, reglas.visibilidad_m, true,
-    `Visibilidad ${ahora.vis} m`, "La visibilidad mejoró");
+  evaluar(antes.vis, ahora.vis, reglas.visibilidad_m, true, mala =>
+    mala
+      ? `Visibilidad bajó: ${fmtVis(antes.vis)} → ${fmtVis(ahora.vis)} (tu mínimo, ${reglas.visibilidad_m} m)`
+      : `Visibilidad mejoró: ${fmtVis(antes.vis)} → ${fmtVis(ahora.vis)} (tu mínimo, ${reglas.visibilidad_m} m)`);
 
   // Sin techo se toma un valor altísimo, así "apareció techo bajo" cuenta
   // como cruce.
-  evaluar(antes.techo ?? 99000, ahora.techo ?? 99000, reglas.techo_ft, true,
-    `Techo en ${ahora.techo} ft`, "El techo levantó");
+  evaluar(antes.techo ?? 99000, ahora.techo ?? 99000, reglas.techo_ft, true, mala => {
+    // El techo es el único que puede no existir, y "de sin techo a 800 ft" se
+    // lee mal. Cuando aparece o desaparece, se dice eso mismo.
+    if (mala) {
+      return antes.techo == null
+        ? `Apareció techo: ${ahora.techo} ft (tu mínimo, ${reglas.techo_ft} ft)`
+        : `Techo bajó: ${antes.techo} → ${ahora.techo} ft (tu mínimo, ${reglas.techo_ft} ft)`;
+    }
+    return ahora.techo == null
+      ? `Se despejó el techo (era de ${antes.techo} ft)`
+      : `Techo levantó: ${antes.techo} → ${ahora.techo} ft (tu mínimo, ${reglas.techo_ft} ft)`;
+  });
 
   if (reglas.tormenta && antes.tormenta !== ahora.tormenta) {
     out.push(ahora.tormenta
-      ? { texto: "Tormenta reportada", empeora: true }
-      : { texto: "Pasó la tormenta", empeora: false });
+      ? { texto: "Tormenta reportada en el METAR", empeora: true }
+      : { texto: "Ya no se reporta tormenta", empeora: false });
   }
   return reglas.mejoras ? out : out.filter(c => c.empeora);
 }
