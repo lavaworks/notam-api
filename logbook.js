@@ -326,9 +326,44 @@ function normalizarTipo(t) {
 /// Cada regla acá responde a "esto se puede verificar sin saber qué escribió
 /// el piloto". No se CORRIGE nada: se marca. Corregir en silencio es
 /// exactamente el problema que estamos tratando de evitar.
+/// Largo máximo razonable de cada campo de texto.
+///
+/// No es paranoia: en una prueba real el modelo entró en bucle y devolvió
+/// `tipo: "C1525000000000…"` con cientos de ceros. Un modelo de lenguaje
+/// puede degenerar en repetición, y sin un tope eso viaja entero hasta la
+/// pantalla del piloto y hasta su logbook. Ningún campo de una hoja de libro
+/// de vuelo se parece ni de lejos a estos límites.
+const LARGOS = {
+  matricula: 12, tipo: 20, desde: 30, hasta: 30,
+  salida: 8, llegada: 8, observaciones: 200
+};
+
 function validar(datos) {
   const avisos = [];
   const vuelos = Array.isArray(datos.vuelos) ? datos.vuelos : [];
+
+  // Recorte de cordura ANTES de cualquier otra cosa: lo que sigue compara
+  // contra listas y expresiones regulares, y no tiene sentido correr eso
+  // sobre una cadena de mil caracteres.
+  let recortados = 0;
+  for (const v of vuelos) {
+    for (const [campo, max] of Object.entries(LARGOS)) {
+      const val = v[campo];
+      if (typeof val === "string" && val.length > max) {
+        v[campo] = val.slice(0, max);
+        v.dudosos = Array.isArray(v.dudosos) ? v.dudosos : [];
+        if (!v.dudosos.includes(campo)) v.dudosos.push(campo);
+        v.motivos = v.motivos || {};
+        v.motivos[campo] = "la lectura salió demasiado larga y se recortó";
+        recortados++;
+      }
+    }
+    // Un número de horas absurdo es el mismo síntoma por otra vía.
+    if (typeof v.horas === "number" && !Number.isFinite(v.horas)) v.horas = null;
+  }
+  if (recortados) {
+    console.warn(`[logbook] ${recortados} campos recortados por largo: posible bucle del modelo`);
+  }
 
   const marcar = (v, campo, motivo) => {
     v.dudosos = Array.isArray(v.dudosos) ? v.dudosos : [];
