@@ -46,6 +46,9 @@ import * as alertas from "./alertas.js";
 // Índice de cartas del AIP. Independiente de todo lo demás: no usa la base
 // de datos, así que sigue funcionando aunque la vigilancia esté apagada.
 import * as cartas from "./cartas.js";
+// Lectura del libro de papel con Gemini. La API key vive acá y NUNCA en la
+// app: una key en el binario se extrae y la factura la paga Matías.
+import * as logbook from "./logbook.js";
 
 const app = express();
 app.use(express.json({ limit: "64kb" }));
@@ -471,6 +474,7 @@ app.get("/health", async (req, res) => {
     // Cuáles fallan, para no tener que adivinar desde afuera.
     con_error: [...scrapeErrors.keys()],
     cartas: cartas.estado(),
+    logbook: logbook.estado(),
     vigilancia: {
       base: alertas.activo(),
       apns: alertas.apnsConfigurado(),
@@ -480,6 +484,7 @@ app.get("/health", async (req, res) => {
 });
 
 cartas.montar(app);
+logbook.montar(app);
 
 app.get("/locations", (req, res) => {
   res.json({
@@ -595,6 +600,7 @@ app.listen(PORT, async () => {
   // abra una ficha no espere los 6 MB. Si falla, no pasa nada: se reintenta
   // en el primer pedido.
   cartas.precalentar();
+  await logbook.initDB();
   console.log(`Servidor corriendo en puerto ${PORT}`);
   try {
     await alertas.initDB();
