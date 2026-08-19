@@ -263,6 +263,50 @@ const TIPOS_CONOCIDOS = [
   "ZLIN", "T-35", "IA-46", "IA-50", "CH-7", "EXPLORER"
 ];
 
+/// Cómo se escribe de verdad en la columna MARCA Y MODELO.
+///
+/// La columna del libro NO pide un código: pide marca y modelo, así que la
+/// gente escribe "CESSNA 152", "Piper PA-11" o "Aero Boero 115". Comparar eso
+/// contra la lista de códigos marcaba TODOS los renglones en ámbar —medido en
+/// la primera prueba real—, y un ámbar que aparece siempre deja de leerse: es
+/// peor que no marcar nada, porque entrena a ignorar la única señal que
+/// tenemos para decir "mirá acá".
+const ESCRITURAS = [
+  [/^CESSNA\s*/, "C"],
+  [/^CE\s*/, "C"],
+  [/^PIPER\s*/, ""],
+  [/^AERO\s*BOERO\s*/, "AB-"],
+  [/^BOERO\s*/, "AB-"],
+  [/^TECNAM\s*/, ""],
+  [/^PZL\s*/, "PZL-"],
+  [/^VANS?\s*/, ""],
+  [/\s*WILGA\s*$/, ""],
+  [/^FMA\s*/, "IA-"]
+];
+
+/// Lleva lo escrito a la forma corta que usa el resto de la app.
+///
+/// Devuelve `null` si no reconoce nada: entonces NO se toca el valor y se
+/// marca dudoso, que es lo correcto. Inventar un tipo que se parece es
+/// exactamente el error que arruina un logbook.
+function canonizarTipo(txt) {
+  if (!txt) return null;
+  let t = txt.toUpperCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[._]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  for (const [re, rep] of ESCRITURAS) t = t.replace(re, rep);
+  t = t.replace(/\s+/g, "");
+  // "Aero Boero AB-115" ya trae el código: la regla de arriba lo dejaba en
+  // "AB-AB-115". Pasa siempre que alguien escribe la marca Y el código, que es
+  // la forma más completa de anotarlo y no tiene por qué ser la que falle.
+  t = t.replace(/^(AB-|PA-|PZL-|IA-)\1+/, "$1");
+  t = t.replace(/^C(?=C\d)/, "");
+  const directo = TIPOS_CONOCIDOS.find(c => normalizarTipo(c) === normalizarTipo(t));
+  return directo ?? null;
+}
+
 function normalizarTipo(t) {
   return (t || "").toUpperCase().replace(/[\s._]/g, "").replace(/-/g, "");
 }
@@ -283,18 +327,30 @@ function validar(datos) {
     v.motivos[campo] = motivo;
   };
 
-  const tiposNorm = new Set(TIPOS_CONOCIDOS.map(normalizarTipo));
-
   for (const v of vuelos) {
     // Matrícula argentina: LV- y tres o cuatro caracteres.
     if (v.matricula && !/^LV-?[A-Z0-9]{3,4}$/i.test(v.matricula.replace(/\s/g, ""))) {
       marcar(v, "matricula", "no tiene forma de matrícula argentina (LV-XXX)");
     }
 
-    // Tipo desconocido: se marca, NO se corrige. Un C150 cambiado a C152 en
-    // silencio es un dato falso con apariencia de dato bueno.
-    if (v.tipo && !tiposNorm.has(normalizarTipo(v.tipo))) {
-      marcar(v, "tipo", "no coincide con ningún tipo habitual en Argentina");
+    // Tipo: se lleva a la forma corta si se reconoce, y se AVISA que se
+    // cambió (azul: "confirmá"). Si no se reconoce, se deja tal cual y se
+    // marca dudoso (ámbar: "completá").
+    //
+    // Nunca se elige "el más parecido": un C150 convertido en C152 porque se
+    // parece es un dato falso con apariencia de dato bueno, y nadie lo
+    // volvería a mirar.
+    if (v.tipo) {
+      const canon = canonizarTipo(v.tipo);
+      if (!canon) {
+        marcar(v, "tipo", "no coincide con ningún tipo habitual en Argentina");
+      } else if (normalizarTipo(canon) !== normalizarTipo(v.tipo)) {
+        v.corregidos = Array.isArray(v.corregidos) ? v.corregidos : [];
+        if (!v.corregidos.includes("tipo")) v.corregidos.push("tipo");
+        v.motivos = v.motivos || {};
+        v.motivos.tipo = `se leyó "${v.tipo}" y se anotó como ${canon}`;
+        v.tipo = canon;
+      }
     }
 
     // Duración contra la diferencia de horarios. Se admite cruce de
@@ -354,6 +410,16 @@ function validar(datos) {
       tipo: "sin_total",
       texto: "No se pudo leer el total de la página, así que no hay con qué verificar la suma. "
            + "Revisá las horas con más atención."
+    });
+  }
+
+  const conCorreccion = vuelos.filter(v => (v.corregidos || []).length).length;
+  if (conCorreccion) {
+    avisos.push({
+      tipo: "corregidos",
+      texto: conCorreccion === 1
+        ? "1 renglón se anotó con el código corto de la aeronave."
+        : `${conCorreccion} renglones se anotaron con el código corto de la aeronave.`
     });
   }
 
