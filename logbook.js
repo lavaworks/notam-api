@@ -212,7 +212,20 @@ async function leerConGemini(base64, mime) {
   });
 
   const txt = await r.text();
-  if (!r.ok) throw new Error(`Gemini HTTP ${r.status}: ${txt.slice(0, 300)}`);
+  if (!r.ok) {
+    // Se distingue "no se entendió la foto" de "el servicio no está
+    // disponible", porque son dos problemas con dos soluciones distintas y
+    // sólo una de ellas es del piloto.
+    //
+    // Salió de una prueba real: con la facturación de Google sin saldo, la
+    // app le decía al piloto "probá con más luz". Mandarlo a sacar la foto de
+    // nuevo diez veces por un problema de nuestra cuenta es la peor forma de
+    // fallar — se cansa y abandona la función creyendo que no anda.
+    const e = new Error(`Gemini HTTP ${r.status}: ${txt.slice(0, 300)}`);
+    e.infraestructura = r.status === 401 || r.status === 403 || r.status === 429
+                     || r.status >= 500;
+    throw e;
+  }
 
   // La respuesta trae el JSON pedido adentro de un sobre. Se busca el primer
   // string que parsee como objeto con `vuelos`, en vez de asumir una ruta
@@ -420,11 +433,19 @@ export function montar(app) {
     } catch (e) {
       ultimoError = e.message;
       console.error("[logbook] fallo leyendo la página:", e.message);
-      res.status(502).json({
-        error: "no_se_pudo_leer",
-        texto: "No se pudo leer la página. Probá con más luz, la hoja lo más plana posible y sin sombras.",
-        detalle: e.message
-      });
+      res.status(502).json(e.infraestructura
+        ? {
+            error: "servicio_no_disponible",
+            texto: "El servicio de lectura no está disponible en este momento. "
+                 + "No es tu foto: probá más tarde.",
+            detalle: e.message
+          }
+        : {
+            error: "no_se_pudo_leer",
+            texto: "No se pudo leer la página. Probá con más luz, la hoja lo más "
+                 + "plana posible y sin sombras.",
+            detalle: e.message
+          });
     }
   });
 
