@@ -51,7 +51,18 @@ import * as cartas from "./cartas.js";
 import * as logbook from "./logbook.js";
 
 const app = express();
-app.use(express.json({ limit: "64kb" }));
+// 64 kb para toda la API: los cuerpos son JSON chicos y un límite bajo es la
+// primera defensa contra que alguien mande basura.
+//
+// PERO la foto de una página del libro pesa cientos de kilobytes, y este
+// parser corre ANTES que el de la ruta: sin la excepción devuelve 413 con una
+// página de error en HTML —no en JSON—, así que la app ni siquiera puede
+// explicar qué pasó. Verificado contra el servidor real el 2026-08-19: el
+// parser propio de `/logbook/leer` nunca llegaba a ejecutarse.
+app.use((req, res, next) =>
+  req.path === "/logbook/leer"
+    ? next()
+    : express.json({ limit: "64kb" })(req, res, next));
 
 const PORT = process.env.PORT || 3000;
 
