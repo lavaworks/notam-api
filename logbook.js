@@ -132,9 +132,27 @@ const ESQUEMA = {
       type: "boolean",
       description: "true SÓLO si la imagen es una página de un libro de vuelo con una tabla de vuelos. false para cualquier otra cosa."
     },
-    totalPaginaHoras: {
+    // TRES NÚMEROS, NO UNO (2026-08-21)
+    //
+    // El pie de la hoja no tiene "el total": tiene un bloque de dos o tres
+    // renglones. En la PRIMERA hoja del libro coinciden y da igual cuál se
+    // lea. En cualquier otra, NO: arriba está lo que viene acumulado de las
+    // hojas anteriores, y el número de más abajo es ese acumulado MÁS los
+    // vuelos de esta hoja. Pidiendo un solo número el modelo devolvía el de
+    // más abajo —el más grande, el que parece "el total"— y el cruce contra
+    // la suma de los renglones no cerraba nunca a partir de la hoja 2.
+    // Peor: acusaba de error de lectura a una hoja perfectamente leída.
+    vienenAnteriorHoras: {
       type: ["number", "null"],
-      description: "El TOTAL de la página escrito a mano al pie, en horas decimales. null si no se ve."
+      description: "El renglón del pie que trae el acumulado DE LAS HOJAS ANTERIORES (\"vienen\", \"transporte\", \"suma anterior\"), en horas decimales. null si la hoja no lo tiene o no se lee."
+    },
+    totalEstaPaginaHoras: {
+      type: ["number", "null"],
+      description: "El renglón del pie que suma SÓLO los vuelos de ESTA hoja, en horas decimales. null si no está escrito o no se lee."
+    },
+    totalAcumuladoHoras: {
+      type: ["number", "null"],
+      description: "El renglón de MÁS ABAJO del pie: el total general acumulado, en horas decimales. null si no se ve."
     },
     vuelos: {
       type: "array",
@@ -172,7 +190,14 @@ LA HOJA
 La foto es la página IZQUIERDA de un libro de vuelo abierto. Las columnas, de izquierda a derecha, son:
 DIA/MES/AÑO · MARCA Y MODELO de la aeronave · MATRÍCULA · PILOTO · DESDE · HASTA · TIEMPOS · ATERRIZAJES.
 La columna TIEMPOS tiene varias sub-columnas (instrucción doble comando, solo, travesía, nocturno, etc.). Un alumno anota casi siempre en las PRIMERAS sub-columnas; no asumas que el tiempo está en una posición fija: buscá en cuál de todas hay un número escrito en ese renglón.
-Arriba a la derecha suele haber un recuadro "AÑO 20__". Al pie hay una fila de TOTALES escrita a mano.
+Arriba a la derecha suele haber un recuadro "AÑO 20__". Al pie hay un BLOQUE DE TOTALES escrito a mano.
+
+EL BLOQUE DE TOTALES DEL PIE (leelo con cuidado, son varios renglones)
+Salvo en la primera hoja del libro, el pie NO tiene un solo total: tiene dos o tres renglones, y significan cosas distintas.
+- El renglón que dice "VIENEN", "TRANSPORTE", "SUMA ANTERIOR" o parecido trae las horas ACUMULADAS DE LAS HOJAS ANTERIORES. Va en "vienenAnteriorHoras".
+- El renglón que suma SÓLO los vuelos escritos en ESTA hoja va en "totalEstaPaginaHoras".
+- El renglón de MÁS ABAJO es el TOTAL GENERAL: las anteriores más ésta. Va en "totalAcumuladoHoras".
+No pongas el mismo número en los tres. Si un renglón no está escrito o no lo leés con seguridad, poné null en ése — no lo deduzcas restando, que la resta la hacemos nosotros. Si la hoja tiene un único total y no hay renglón de "vienen", es la primera hoja: poné ese número en "totalEstaPaginaHoras" y dejá los otros dos en null.
 
 ANTES QUE NADA: ¿ESTO ES UNA PÁGINA DE LIBRO DE VUELO?
 Si la imagen NO es una página de un libro de vuelo con su tabla —es una captura de pantalla, un texto, una foto cualquiera, un documento distinto— poné "esPaginaDeLibro": false, devolvé "vuelos": [] y no hagas nada más.
@@ -435,29 +460,77 @@ function validar(datos) {
   // error que más importa —una hora mal leída— sin necesitar saber nada del
   // piloto ni de sus vuelos.
   const suma = vuelos.reduce((a, v) => a + (typeof v.horas === "number" ? v.horas : 0), 0);
-  if (typeof datos.totalPaginaHoras === "number" && datos.totalPaginaHoras > 0) {
-    const dif = Math.abs(suma - datos.totalPaginaHoras);
-    if (dif > 0.2) {
+
+  // CONTRA QUÉ NÚMERO SE CRUZA
+  //
+  // Hay que comparar la suma de los renglones contra el total DE ESTA HOJA, y
+  // en las hojas que no son la primera ese número puede no estar escrito: sólo
+  // están el acumulado que viene y el acumulado nuevo. En ese caso el total de
+  // la hoja se DEDUCE restando, que es la misma cuenta que hizo el piloto.
+  //
+  // Orden de preferencia, de más confiable a menos:
+  //   1. El renglón "total de esta página", si está escrito.
+  //   2. acumulado − vienen, si están los dos.
+  //   3. El acumulado solo, PERO únicamente si no hay renglón de "vienen":
+  //      eso es la primera hoja del libro, donde los dos son el mismo número.
+  // Si no se puede armar ninguno, no se cruza nada y se dice por qué.
+  const nDe = (x) => (typeof x === "number" && isFinite(x) && x >= 0 ? x : null);
+  const vienen    = nDe(datos.vienenAnteriorHoras);
+  const estaHoja  = nDe(datos.totalEstaPaginaHoras);
+  const acumulado = nDe(datos.totalAcumuladoHoras);
+
+  let referencia = null, origen = "";
+  if (estaHoja !== null && estaHoja > 0) {
+    referencia = estaHoja;
+    origen = "el total de la hoja";
+  } else if (acumulado !== null && vienen !== null && acumulado >= vienen) {
+    referencia = acumulado - vienen;
+    origen = "el acumulado menos lo que venía de las hojas anteriores";
+  } else if (acumulado !== null && acumulado > 0 && vienen === null) {
+    referencia = acumulado;
+    origen = "el total de la hoja";
+  }
+
+  if (referencia !== null && referencia > 0) {
+    // La tolerancia sube cuando la referencia es una resta: son DOS números
+    // leídos a mano, así que arrastra el error de los dos.
+    const tolerancia = origen.startsWith("el acumulado") ? 0.3 : 0.2;
+    if (Math.abs(suma - referencia) > tolerancia) {
       avisos.push({
         tipo: "total_no_cierra",
-        texto: `Los tiempos leídos suman ${suma.toFixed(1)} h y el total de la página dice `
-             + `${datos.totalPaginaHoras.toFixed(1)} h. Hay al menos un renglón mal leído: `
+        texto: `Los tiempos leídos suman ${suma.toFixed(1)} h y ${origen} da `
+             + `${referencia.toFixed(1)} h. Hay al menos un renglón mal leído: `
              + `revisá las horas antes de guardar.`,
-        suma, total: datos.totalPaginaHoras
+        suma, total: referencia, origen
       });
     } else {
       avisos.push({
         tipo: "total_cierra",
-        texto: `La suma de los tiempos coincide con el total de la página (${suma.toFixed(1)} h).`,
-        suma, total: datos.totalPaginaHoras
+        texto: `La suma de los tiempos coincide con el total de esta hoja (${suma.toFixed(1)} h).`,
+        suma, total: referencia, origen
       });
     }
   } else {
     avisos.push({
       tipo: "sin_total",
-      texto: "No se pudo leer el total de la página, así que no hay con qué verificar la suma. "
+      texto: "No se pudo leer el total de esta hoja, así que no hay con qué verificar la suma. "
            + "Revisá las horas con más atención."
     });
+  }
+
+  // Control aparte: que el pie cierre consigo mismo. Si están los tres números
+  // y vienen + esta ≠ acumulado, el que está mal leído es el PIE, no los
+  // renglones — y conviene decirlo, porque si no el piloto sale a buscar el
+  // error entre los vuelos, que están bien.
+  if (vienen !== null && estaHoja !== null && acumulado !== null) {
+    if (Math.abs(vienen + estaHoja - acumulado) > 0.3) {
+      avisos.push({
+        tipo: "pie_no_cierra",
+        texto: `El pie de la hoja no cierra solo: ${vienen.toFixed(1)} h que vienen `
+             + `+ ${estaHoja.toFixed(1)} h de esta hoja no dan ${acumulado.toFixed(1)} h. `
+             + `Puede ser un número del pie mal leído; los vuelos de arriba pueden estar bien.`
+      });
+    }
   }
 
   const conCorreccion = vuelos.filter(v => (v.corregidos || []).length).length;
@@ -552,7 +625,19 @@ export function montar(app) {
       ultimoError = null;
 
       res.json({
-        totalPaginaHoras: crudo.totalPaginaHoras ?? null,
+        // Se sigue mandando `totalPaginaHoras` con el total DE ESTA HOJA para
+        // no romper las apps ya instaladas, que lo leen con ese nombre. El
+        // desglose completo va aparte, en `pie`.
+        totalPaginaHoras: crudo.totalEstaPaginaHoras
+          ?? ((typeof crudo.totalAcumuladoHoras === "number" &&
+               typeof crudo.vienenAnteriorHoras === "number")
+              ? crudo.totalAcumuladoHoras - crudo.vienenAnteriorHoras
+              : (crudo.vienenAnteriorHoras == null ? crudo.totalAcumuladoHoras ?? null : null)),
+        pie: {
+          vienenAnterior: crudo.vienenAnteriorHoras ?? null,
+          estaPagina:     crudo.totalEstaPaginaHoras ?? null,
+          acumulado:      crudo.totalAcumuladoHoras ?? null
+        },
         vuelos,
         avisos,
         modelo: MODELO,

@@ -402,13 +402,22 @@ export function apnsConfigurado() {
 ///
 /// Con el reintento, los dos tipos de build funcionan siempre y la variable
 /// deja de ser una trampa.
-export function enviarPush(deviceToken, titulo, cuerpo, urgente = true) {
-  return enviarA(hostPreferido(), deviceToken, titulo, cuerpo, urgente)
+///
+/// `datos` viaja aparte del bloque `aps` y es lo que le permite a la app abrir
+/// la ficha del aeródromo cuando el piloto toca el aviso. Sin esto la
+/// notificación dice "SADM · NOTAM nuevo" y al tocarla la app abre en la
+/// pantalla en la que estaba, que es exactamente el momento en que el aviso
+/// deja de servir: el piloto tiene que acordarse del ICAO, ir a Aeródromos,
+/// buscarlo y desplegar la tarjeta. Se manda SIEMPRE el ICAO, aunque la app
+/// vieja no lo mire: un campo de más en el payload no rompe nada, y así los
+/// que todavía no actualizaron siguen funcionando igual que hoy.
+export function enviarPush(deviceToken, titulo, cuerpo, urgente = true, datos = null) {
+  return enviarA(hostPreferido(), deviceToken, titulo, cuerpo, urgente, datos)
     .then(r => {
       const rechazoDeEntorno =
         r.status === 400 && /BadDeviceToken/i.test(r.detalle || "");
       if (!rechazoDeEntorno) return r;
-      return enviarA(hostAlternativo(), deviceToken, titulo, cuerpo, urgente)
+      return enviarA(hostAlternativo(), deviceToken, titulo, cuerpo, urgente, datos)
         .then(r2 => r2.ok ? { ...r2, entornoAlternativo: true } : r);
     });
 }
@@ -422,13 +431,13 @@ function hostAlternativo() {
     ? "https://api.push.apple.com" : "https://api.sandbox.push.apple.com";
 }
 
-function enviarA(host, deviceToken, titulo, cuerpo, urgente) {
+function enviarA(host, deviceToken, titulo, cuerpo, urgente, datos = null) {
   return new Promise((resolve) => {
     if (!apnsConfigurado()) return resolve({ ok: false, motivo: "APNs sin configurar" });
     const cliente = http2.connect(host);
     cliente.on("error", () => resolve({ ok: false, motivo: "conexión" }));
 
-    const payload = JSON.stringify({
+    const cuerpoPush = {
       aps: {
         alert: { title: titulo, body: cuerpo },
         sound: urgente ? "default" : undefined,
@@ -439,7 +448,20 @@ function enviarA(host, deviceToken, titulo, cuerpo, urgente) {
         // que levantó el techo, pero tampoco esconderlo.
         "interruption-level": urgente ? "time-sensitive" : "active"
       }
-    });
+    };
+
+    // Namespace propio: APNs se reserva `aps` y cualquier clave suelta en la
+    // raíz es tierra de nadie. Metiendo todo bajo "oscar" no hay forma de
+    // pisarle un campo a Apple el día que agreguen uno.
+    if (datos && typeof datos === "object") {
+      const limpio = {};
+      for (const [k, v] of Object.entries(datos)) {
+        if (v !== null && v !== undefined && v !== "") limpio[k] = v;
+      }
+      if (Object.keys(limpio).length) cuerpoPush.oscar = limpio;
+    }
+
+    const payload = JSON.stringify(cuerpoPush);
 
     const req = cliente.request({
       ":method": "POST",

@@ -411,8 +411,18 @@ async function procesarVigilancia() {
 
     const urgente = est.notamNuevos.length > 0 || malos.length > 0
                  || firCerca.length > 0;
+
+    // A qué sección de la ficha lleva el aviso al tocarlo. El orden es el de
+    // gravedad, que es el mismo con el que se armó el texto: si hay NOTAM
+    // nuevo eso es lo que el piloto vino a leer, aunque además haya bajado el
+    // techo. Si se abriera siempre arriba de todo daría lo mismo que no
+    // mandar nada: la tarjeta de NOTAM está al final de una ficha larga.
+    const ver = est.notamNuevos.length ? "notam"
+              : firCerca.length        ? "fir"
+              : "metar";
     const res = await alertas.enviarPush(
-      s.token, s.nombre || s.icao, partes.join(" · "), urgente);
+      s.token, s.nombre || s.icao, partes.join(" · "), urgente,
+      { icao: s.icao, ver, fir: s.fir || null });
 
     if (res.ok) {
       if (textosClima.length) {
