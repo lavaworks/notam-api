@@ -225,27 +225,64 @@ Devolvé el resultado en el formato JSON pedido.`;
 
 // ── Llamada a Gemini ─────────────────────────────────────────────────────
 
+/// Cuánto se espera a Gemini antes de cortar por lo sano.
+///
+/// La app corta a los 90 s. Si acá no hubiera corte —y no lo había— una
+/// llamada colgada dejaba al piloto mirando el spinner hasta que iOS tiraba
+/// "The request timed out." en inglés, sin ninguna pista de qué pasó ni de si
+/// se le cobró la página. Con 55 s el corte lo damos NOSOTROS, con margen de
+/// sobra para contestar antes de que el teléfono se canse, y el mensaje sale
+/// en castellano y explicando que no se gastó cuota.
+///
+/// 55 y no 20: una lectura normal tarda 6-8 s, pero una hoja muy cargada o un
+/// pico de Google pueden estirarla, y cortar una lectura que iba a salir bien
+/// es peor que esperar un rato más.
+const TOPE_ESPERA_MS = Number(process.env.LOGBOOK_TOPE_ESPERA_MS || 55000);
+
 async function leerConGemini(base64, mime) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("falta GEMINI_API_KEY en el entorno");
 
-  const r = await fetch(ENDPOINT, {
-    method: "POST",
-    headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: MODELO,
-      input: [
-        { type: "text", text: PROMPT },
-        { type: "image", data: base64, mime_type: mime }
-      ],
-      response_format: {
-        type: "text",
-        mime_type: "application/json",
-        schema: ESQUEMA
-      }
-    })
-  });
+  const corte = new AbortController();
+  const reloj = setTimeout(() => corte.abort(), TOPE_ESPERA_MS);
 
+  let r;
+  try {
+    r = await fetch(ENDPOINT, {
+      method: "POST",
+      headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
+      signal: corte.signal,
+      body: JSON.stringify({
+        model: MODELO,
+        input: [
+          { type: "text", text: PROMPT },
+          { type: "image", data: base64, mime_type: mime }
+        ],
+        response_format: {
+          type: "text",
+          mime_type: "application/json",
+          schema: ESQUEMA
+        }
+      })
+    });
+  } catch (e) {
+    if (e.name === "AbortError") {
+      const err = new Error(`Gemini no contestó en ${Math.round(TOPE_ESPERA_MS / 1000)} s`);
+      // Va marcado como problema NUESTRO, no de la foto: mandar al piloto a
+      // sacarla de nuevo por una demora del servicio lo hace repetir diez
+      // veces algo que no depende de él.
+      err.infraestructura = true;
+      err.tardo = true;
+      throw err;
+    }
+    throw e;
+  } finally {
+    // Sin esto el proceso queda con un timer vivo por cada lectura.
+    clearTimeout(reloj);
+  }
+
+  // El cuerpo también puede colgarse, no sólo la conexión. El mismo
+  // `signal` lo cubre porque aborta el stream entero.
   const txt = await r.text();
   if (!r.ok) {
     // Se distingue "no se entendió la foto" de "el servicio no está
@@ -647,7 +684,19 @@ export function montar(app) {
     } catch (e) {
       ultimoError = e.message;
       console.error("[logbook] fallo leyendo la página:", e.message);
-      res.status(502).json(e.infraestructura
+      // La demora tiene mensaje propio. "No está disponible" haría pensar que
+      // el servicio está caído y que no vale la pena reintentar; una demora,
+      // en cambio, se resuelve casi siempre probando de nuevo enseguida. Y en
+      // los dos casos importa decir que NO se gastó cuota: sin eso el piloto
+      // que tiene 25 páginas cuenta los intentos fallidos como gastados.
+      res.status(e.tardo ? 504 : 502).json(e.tardo
+        ? {
+            error: "tardo_demasiado",
+            texto: "La lectura tardó demasiado y se cortó. No se te descontó "
+                 + "ninguna página: probá de nuevo.",
+            detalle: e.message
+          }
+        : e.infraestructura
         ? {
             error: "servicio_no_disponible",
             texto: "El servicio de lectura no está disponible en este momento. "
