@@ -38,10 +38,22 @@ const MODELO   = process.env.GEMINI_MODELO || "gemini-3.5-flash";
 const ENDPOINT = process.env.GEMINI_ENDPOINT
   || "https://generativelanguage.googleapis.com/v1beta/interactions";
 
-/// Páginas por dispositivo, de por vida. Un libro entero son 15-20 hojas, así
-/// que 25 alcanza para digitalizar el pasado completo y deja margen para las
-/// que salgan mal. No es un límite de uso: es un tope de gasto.
-const TOPE_DISPOSITIVO = Number(process.env.LOGBOOK_TOPE_DISPOSITIVO || 25);
+/// Páginas por dispositivo, de por vida.
+///
+/// BAJÓ DE 25 A 5 (2026-08-25). No es que 5 alcance para digitalizar un libro
+/// entero —no alcanza—: es que el costo de cada lectura lo paga Matías y la
+/// app todavía no tiene con qué recuperarlo. Cinco es lo que hace falta para
+/// probar la función y decidir si sirve.
+///
+/// El que necesita más lo pide por WhatsApp desde la misma pantalla que le
+/// avisa que se quedó sin cupo, y se le amplía por dispositivo desde
+/// /logbook/admin sin tocar este número. Ese circuito ya existe y por eso
+/// bajar el default no deja a nadie trabado: lo convierte en una conversación
+/// en vez de una pared.
+///
+/// Subirlo acá se lo sube a TODOS y mueve el techo de gasto; ampliar por
+/// dispositivo, no.
+const TOPE_DISPOSITIVO = Number(process.env.LOGBOOK_TOPE_DISPOSITIVO || 5);
 
 /// Tope global por día. Es el cortacircuitos: si algo se vuelve loco —un bug,
 /// un script, un dispositivo que reinstala para resetear su cuota— esto lo
