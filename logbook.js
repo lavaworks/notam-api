@@ -70,40 +70,103 @@ function contarGlobal() {
 
 // ── Cuota ────────────────────────────────────────────────────────────────
 
-export async function initDB() {
-  if (!process.env.DATABASE_URL) {
-    console.log("[logbook] sin DATABASE_URL: la cuota por dispositivo vive en memoria");
-    return;
-  }
+/// Cuándo fue el último intento de conectar, para no martillar la base.
+let ultimoIntentoDB = 0;
+const ESPERA_REINTENTO_DB_MS = 30_000;
+
+/// Conecta a Postgres si hace falta, y REINTENTA.
+///
+/// POR QUÉ NO ALCANZA CON INTENTARLO AL ARRANCAR (2026-08-25)
+/// -----------------------------------------------------------
+/// Antes esto corría una sola vez, en el `listen`. Si la base no estaba
+/// disponible en ese instante exacto, `pool` quedaba en null PARA SIEMPRE y la
+/// cuota pasaba a vivir en memoria sin que nadie se enterara: el `/health`
+/// decía `cuota_persistida: false` y nada más. Pasó de verdad al cambiar el
+/// plan de Render — la base se reinició unos segundos y el arranque del
+/// servicio cayó justo en esa ventana.
+///
+/// El modo de fallar es feo porque es silencioso y no se cura solo: el techo
+/// de 25 páginas por dispositivo deja de tener efecto entre reinicios, que es
+/// precisamente el techo de gasto contra la API de Google. Hasta el próximo
+/// deploy nadie lo nota.
+///
+/// Ahora cualquier consulta que encuentre el pool caído vuelve a intentar,
+/// como mucho una vez cada 30 s. Un corte de base de un minuto se arregla
+/// solo, sin deploy y sin que nadie mire nada.
+async function asegurarPool() {
+  if (pool) return pool;
+  if (!process.env.DATABASE_URL) return null;
+
+  const ahora = Date.now();
+  if (ahora - ultimoIntentoDB < ESPERA_REINTENTO_DB_MS) return null;
+  ultimoIntentoDB = ahora;
+
+  let candidato = null;
   try {
     // Pool chico y propio. `alertas.js` no exporta el suyo y no vale la pena
     // tocarlo: dos conexiones más no mueven la aguja y este módulo queda
     // independiente, que es lo que necesita para sobrevivir si algún día se
     // apaga la vigilancia.
-    pool = new pg.Pool({
+    candidato = new pg.Pool({
       connectionString: process.env.DATABASE_URL,
       ssl: { rejectUnauthorized: false },
       max: 2
     });
-    await pool.query(`
+    // Un pool que pierde una conexión emite 'error'; sin este handler, Node
+    // se lleva el proceso entero por delante con una excepción no capturada.
+    candidato.on("error", (e) => {
+      console.error("[logbook] conexión de Postgres caída:", e.message);
+    });
+
+    await candidato.query(`
       CREATE TABLE IF NOT EXISTS logbook_cuota (
         dispositivo TEXT PRIMARY KEY,
         usadas      INTEGER NOT NULL DEFAULT 0,
         primera     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         ultima      TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );`);
+
+    pool = candidato;
     console.log("[logbook] cuota persistida en Postgres");
+    return pool;
   } catch (e) {
+    // El pool a medio hacer se cierra: si no, quedan sockets colgados en cada
+    // reintento fallido.
+    if (candidato) { try { await candidato.end(); } catch {} }
     pool = null;
     console.error("[logbook] no se pudo preparar la tabla de cuota:", e.message);
+    return null;
   }
 }
 
+export async function initDB() {
+  if (!process.env.DATABASE_URL) {
+    console.log("[logbook] sin DATABASE_URL: la cuota por dispositivo vive en memoria");
+    return;
+  }
+  // Si falla, no pasa nada grave: el primer pedido que llegue lo reintenta.
+  ultimoIntentoDB = 0;
+  await asegurarPool();
+}
+
 async function usadasDe(dispositivo) {
-  if (!pool) return memoria.get(dispositivo) ?? 0;
-  const { rows } = await pool.query(
-    "SELECT usadas FROM logbook_cuota WHERE dispositivo = $1", [dispositivo]);
-  return rows[0]?.usadas ?? 0;
+  // `asegurarPool` reintenta la conexión si se cayó. Si sigue sin base, la
+  // cuenta sale de memoria: se pierde en el próximo reinicio, pero un techo
+  // que a veces se afloja es mejor que un pedido que falla.
+  const p = await asegurarPool();
+  if (!p) return memoria.get(dispositivo) ?? 0;
+  try {
+    const { rows } = await p.query(
+      "SELECT usadas FROM logbook_cuota WHERE dispositivo = $1", [dispositivo]);
+    return rows[0]?.usadas ?? 0;
+  } catch (e) {
+    // Que se caiga la base NO puede impedir leer una hoja. Se marca el pool
+    // como muerto para que el próximo pedido lo reintente y se sigue con la
+    // cuenta de memoria.
+    console.error("[logbook] consulta de cuota falló:", e.message);
+    pool = null;
+    return memoria.get(dispositivo) ?? 0;
+  }
 }
 
 /// Se suma DESPUÉS de una lectura exitosa. Si Gemini falla o la foto no se
@@ -113,14 +176,26 @@ async function sumarUso(dispositivo) {
   contarGlobal();
   usadasHoy++;
   leidasTotal++;
-  if (!pool) {
+
+  const p = await asegurarPool();
+  if (!p) {
     memoria.set(dispositivo, (memoria.get(dispositivo) ?? 0) + 1);
     return;
   }
-  await pool.query(`
-    INSERT INTO logbook_cuota (dispositivo, usadas) VALUES ($1, 1)
-    ON CONFLICT (dispositivo) DO UPDATE
-      SET usadas = logbook_cuota.usadas + 1, ultima = NOW();`, [dispositivo]);
+  try {
+    await p.query(`
+      INSERT INTO logbook_cuota (dispositivo, usadas) VALUES ($1, 1)
+      ON CONFLICT (dispositivo) DO UPDATE
+        SET usadas = logbook_cuota.usadas + 1, ultima = NOW();`, [dispositivo]);
+  } catch (e) {
+    // Esto corre DESPUÉS de una lectura exitosa: si tira, el piloto ya tiene
+    // sus vuelos y lo único que se pierde es el descuento de la cuota. Se
+    // anota en memoria y se sigue — hacer fallar el pedido acá sería
+    // devolverle un error por una hoja que sí se leyó.
+    console.error("[logbook] no se pudo descontar la cuota:", e.message);
+    pool = null;
+    memoria.set(dispositivo, (memoria.get(dispositivo) ?? 0) + 1);
+  }
 }
 
 // ── El esquema que se le exige al modelo ─────────────────────────────────
