@@ -32,6 +32,7 @@
 
 import express from "express";
 import pg from "pg";
+import crypto from "crypto";
 
 const MODELO   = process.env.GEMINI_MODELO || "gemini-3.5-flash";
 const ENDPOINT = process.env.GEMINI_ENDPOINT
@@ -125,6 +126,12 @@ async function asegurarPool() {
         primera     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         ultima      TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );`);
+    // Tope propio de ESTE dispositivo, cuando se le amplió a mano. NULL =
+    // el general. Va con ADD COLUMN IF NOT EXISTS y no dentro del CREATE
+    // porque la tabla ya existe en producción con filas adentro: el CREATE
+    // no se vuelve a ejecutar y la columna nunca aparecería.
+    await candidato.query(
+      `ALTER TABLE logbook_cuota ADD COLUMN IF NOT EXISTS tope INTEGER;`);
 
     pool = candidato;
     console.log("[logbook] cuota persistida en Postgres");
@@ -166,6 +173,26 @@ async function usadasDe(dispositivo) {
     console.error("[logbook] consulta de cuota falló:", e.message);
     pool = null;
     return memoria.get(dispositivo) ?? 0;
+  }
+}
+
+/// El tope de ESTE dispositivo: el suyo propio si se le amplió, o el general.
+///
+/// Existe porque el tope de 25 tiene que poder levantarse PARA UNO. La
+/// alternativa era subir `LOGBOOK_TOPE_DISPOSITIVO`, que se lo sube a todos y
+/// mueve el techo de gasto para resolverle el problema a una persona.
+async function topeDe(dispositivo) {
+  const p = await asegurarPool();
+  if (!p) return TOPE_DISPOSITIVO;
+  try {
+    const { rows } = await p.query(
+      "SELECT tope FROM logbook_cuota WHERE dispositivo = $1", [dispositivo]);
+    const t = rows[0]?.tope;
+    return (typeof t === "number" && t > 0) ? t : TOPE_DISPOSITIVO;
+  } catch (e) {
+    console.error("[logbook] no se pudo leer el tope:", e.message);
+    pool = null;
+    return TOPE_DISPOSITIVO;
   }
 }
 
@@ -702,12 +729,13 @@ export function montar(app) {
       }
 
       const usadas = await usadasDe(dispositivo);
-      if (usadas >= TOPE_DISPOSITIVO) {
+      const tope = await topeDe(dispositivo);
+      if (usadas >= tope) {
         return res.status(429).json({
           error: "cupo_dispositivo",
-          texto: `Llegaste al límite de ${TOPE_DISPOSITIVO} páginas. `
-               + `Si te faltan hojas, escribinos y lo ampliamos.`,
-          cuota: { usadas, limite: TOPE_DISPOSITIVO }
+          texto: `Llegaste al límite de ${tope} páginas. `
+               + `Escribinos y te lo ampliamos.`,
+          cuota: { usadas, limite: tope }
         });
       }
 
@@ -754,7 +782,7 @@ export function montar(app) {
         avisos,
         modelo: MODELO,
         ms: Date.now() - t0,
-        cuota: { usadas: usadas + 1, limite: TOPE_DISPOSITIVO }
+        cuota: { usadas: usadas + 1, limite: tope }
       });
     } catch (e) {
       ultimoError = e.message;
@@ -789,10 +817,115 @@ export function montar(app) {
 
   // Cuánto le queda al dispositivo, para que la app lo muestre ANTES de que
   // el piloto saque la foto y no después.
+  // ── Ampliar el cupo de UN dispositivo ──────────────────────────────────
+  //
+  // Se pensó para usarse desde el teléfono, en el momento en que llega el
+  // WhatsApp del piloto: abrís el link, pegás el ID que te mandó, ponés el
+  // número nuevo y listo. Sin deploy, sin SQL y sin tocarle el tope a nadie
+  // más.
+  //
+  // EL TOKEN VA EN UN FORMULARIO Y NO EN LA URL. Una URL con el secreto
+  // adentro queda en el historial del navegador, en los logs de Render y en
+  // cualquier proxy del camino; y encima se comparte sin querer al mandar el
+  // link. En un POST viaja en el cuerpo y no queda registrado en ningún lado.
+  //
+  // Si `LOGBOOK_ADMIN_TOKEN` no está configurado, esto queda APAGADO. Un
+  // endpoint de administración sin clave es peor que no tenerlo: cualquiera
+  // se auto-amplía el cupo y el techo de gasto deja de existir.
+  const adminActivo = () => !!(process.env.LOGBOOK_ADMIN_TOKEN || "").trim();
+
+  function tokenValido(recibido) {
+    const esperado = (process.env.LOGBOOK_ADMIN_TOKEN || "").trim();
+    const dado = String(recibido || "").trim();
+    if (!esperado || !dado) return false;
+    // Longitudes distintas ya no coinciden, y `timingSafeEqual` exige que
+    // sean iguales. Se compara igual con él para no filtrar por tiempo
+    // cuántos caracteres del principio acertó quien esté probando.
+    const a = Buffer.from(esperado);
+    const b = Buffer.from(dado);
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
+  }
+
+  app.get("/logbook/admin", (req, res) => {
+    if (!adminActivo()) return res.status(404).send("No disponible.");
+    res.type("html").send(`<!doctype html><html lang="es"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ampliar cupo</title>
+<style>
+ body{font-family:-apple-system,system-ui,sans-serif;background:#111;color:#eee;
+      margin:0;padding:24px;line-height:1.5}
+ h1{font-size:18px;margin:0 0 4px} p{color:#999;font-size:13px;margin:0 0 20px}
+ label{display:block;font-size:12px;color:#999;margin:14px 0 4px}
+ input{width:100%;box-sizing:border-box;padding:12px;font-size:16px;
+       border-radius:8px;border:1px solid #333;background:#1c1c1c;color:#eee}
+ button{width:100%;margin-top:20px;padding:14px;font-size:16px;font-weight:600;
+        border:0;border-radius:8px;background:#2d7;color:#000}
+</style></head><body>
+<h1>Ampliar cupo de escaneo</h1>
+<p>El ID del dispositivo te lo manda el piloto desde la app.</p>
+<form method="POST" action="/logbook/admin">
+ <label>Clave</label><input name="token" type="password" autocomplete="off" required>
+ <label>ID del dispositivo</label><input name="dispositivo" required autocapitalize="characters">
+ <label>Nuevo tope de páginas</label><input name="tope" type="number" min="1" max="500" value="50" required>
+ <button type="submit">Ampliar</button>
+</form></body></html>`);
+  });
+
+  app.post("/logbook/admin",
+    express.urlencoded({ extended: false, limit: "8kb" }),
+    async (req, res) => {
+      if (!adminActivo()) return res.status(404).send("No disponible.");
+
+      const { token, dispositivo, tope } = req.body || {};
+      if (!tokenValido(token)) {
+        console.warn("[logbook] intento de ampliación con clave incorrecta");
+        return res.status(401).type("html")
+          .send('<body style="font-family:system-ui;padding:24px">Clave incorrecta. <a href="/logbook/admin">Volver</a></body>');
+      }
+
+      const id = String(dispositivo || "").trim();
+      const n = Number(tope);
+      if (!id || !Number.isFinite(n) || n < 1 || n > 500) {
+        return res.status(400).type("html")
+          .send('<body style="font-family:system-ui;padding:24px">Datos inválidos. <a href="/logbook/admin">Volver</a></body>');
+      }
+
+      const p = await asegurarPool();
+      if (!p) {
+        return res.status(503).type("html")
+          .send('<body style="font-family:system-ui;padding:24px">La base no está disponible. Probá de nuevo en un minuto.</body>');
+      }
+
+      try {
+        // El dispositivo puede no tener fila todavía —si nunca leyó nada— así
+        // que se inserta con usadas en 0 en vez de fallar.
+        await p.query(`
+          INSERT INTO logbook_cuota (dispositivo, usadas, tope) VALUES ($1, 0, $2)
+          ON CONFLICT (dispositivo) DO UPDATE SET tope = $2;`, [id, n]);
+        const { rows } = await p.query(
+          "SELECT usadas, tope FROM logbook_cuota WHERE dispositivo = $1", [id]);
+        const u = rows[0]?.usadas ?? 0;
+        console.log(`[logbook] cupo de ${id} ampliado a ${n}`);
+        res.type("html").send(
+          `<body style="font-family:system-ui;padding:24px;background:#111;color:#eee">
+           <h2 style="color:#2d7">Listo</h2>
+           <p>Tope nuevo: <b>${n}</b> páginas.<br>Usadas hasta ahora: <b>${u}</b>.<br>
+           Le quedan <b>${Math.max(0, n - u)}</b>.</p>
+           <p><a style="color:#6af" href="/logbook/admin">Ampliar otro</a></p></body>`);
+      } catch (e) {
+        console.error("[logbook] no se pudo ampliar el cupo:", e.message);
+        pool = null;
+        res.status(500).type("html")
+          .send('<body style="font-family:system-ui;padding:24px">No se pudo guardar. Probá de nuevo.</body>');
+      }
+    });
+
   app.get("/logbook/cuota/:dispositivo", async (req, res) => {
     try {
       const usadas = await usadasDe(req.params.dispositivo);
-      res.json({ usadas, limite: TOPE_DISPOSITIVO, restantes: Math.max(0, TOPE_DISPOSITIVO - usadas) });
+      const tope = await topeDe(req.params.dispositivo);
+      res.json({ usadas, limite: tope, restantes: Math.max(0, tope - usadas) });
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
