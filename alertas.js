@@ -11,6 +11,11 @@
 //   APNS_TEAM_ID   Team ID de la cuenta de desarrollador
 //   APNS_TOPIC     bundle id — Lavaworks.Flight-Center
 //   APNS_ENV       "prod" o "sandbox" (default prod)
+//   FCM_SERVICE_ACCOUNT  JSON de la cuenta de servicio de Firebase, entero y
+//                  en una sola línea (Render no acepta multilínea; los \n de
+//                  la private_key quedan escapados dentro del propio JSON,
+//                  que es como los emite Google). Sin esto Android queda sin
+//                  push y iOS sigue igual.
 
 import pg from "pg";
 import jwt from "jsonwebtoken";
@@ -70,8 +75,13 @@ export async function initDB() {
   // publican METAR propio: sin esto la vigilancia de clima sólo podía
   // funcionar en los ~30 que tienen estación, y activar la campanita en
   // Luján no avisaba nunca nada.
+  // `plataforma` (2026-08-26): a dónde mandar el push. Nace en 'ios' porque
+  // todas las suscripciones que ya existen son de iPhone y el default tiene
+  // que dejarlas exactamente como estaban. La app de Android manda
+  // "android" explícito.
   for (const col of ["lat DOUBLE PRECISION", "lon DOUBLE PRECISION", "fir TEXT",
-                     "estacion TEXT", "nombre TEXT"]) {
+                     "estacion TEXT", "nombre TEXT",
+                     "plataforma TEXT NOT NULL DEFAULT 'ios'"]) {
     await pool.query(`ALTER TABLE suscripciones ADD COLUMN IF NOT EXISTS ${col};`);
   }
 
@@ -83,9 +93,10 @@ export function activo() { return pool !== null; }
 
 // ── Suscripciones ────────────────────────────────────────────────────────
 
-export async function guardarSuscripcion({ token, aerodromos, reglas }) {
+export async function guardarSuscripcion({ token, aerodromos, reglas, plataforma }) {
   if (!pool) throw new Error("sin base");
   const r = reglas || {};
+  const plat = plataforma === "android" ? "android" : "ios";
   const cliente = await pool.connect();
   try {
     await cliente.query("BEGIN");
@@ -99,8 +110,8 @@ export async function guardarSuscripcion({ token, aerodromos, reglas }) {
         `INSERT INTO suscripciones
            (token, icao, indicador, vence, viento_kt, rafaga_kt,
             visibilidad_m, techo_ft, tormenta, mejoras, lat, lon, fir,
-            estacion, nombre)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+            estacion, nombre, plataforma)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
         [token, a.icao.toUpperCase(), a.indicador.toUpperCase(), a.vence,
          r.vientoKt ?? 20, r.rafagaKt ?? 25, r.visibilidadM ?? 5000,
          r.techoFt ?? 1500, r.tormenta ?? true, r.mejoras ?? true,
@@ -113,7 +124,8 @@ export async function guardarSuscripcion({ token, aerodromos, reglas }) {
          // ICAO, que es el comportamiento anterior.
          a.estacion ? String(a.estacion).toUpperCase() : null,
          // El título del push: "SRDL" no se lee como Luján.
-         a.nombre ? String(a.nombre) : null]
+         a.nombre ? String(a.nombre) : null,
+         plat]
       );
     }
     await cliente.query("COMMIT");
@@ -411,7 +423,16 @@ export function apnsConfigurado() {
 /// buscarlo y desplegar la tarjeta. Se manda SIEMPRE el ICAO, aunque la app
 /// vieja no lo mire: un campo de más en el payload no rompe nada, y así los
 /// que todavía no actualizaron siguen funcionando igual que hoy.
-export function enviarPush(deviceToken, titulo, cuerpo, urgente = true, datos = null) {
+export function enviarPush(destino, titulo, cuerpo, urgente = true, datos = null) {
+  // `destino` puede ser el token pelado (como se llamaba antes) o la fila de
+  // la suscripción con su plataforma. Se aceptan las dos formas para no
+  // tener que tocar todos los call sites de una.
+  const deviceToken = typeof destino === "string" ? destino : destino.token;
+  const plataforma = typeof destino === "string"
+    ? "ios" : (destino.plataforma || "ios");
+
+  if (plataforma === "android") return enviarFCM(deviceToken, titulo, cuerpo, urgente, datos);
+
   return enviarA(hostPreferido(), deviceToken, titulo, cuerpo, urgente, datos)
     .then(r => {
       const rechazoDeEntorno =
@@ -480,15 +501,151 @@ function enviarA(host, deviceToken, titulo, cuerpo, urgente, datos = null) {
     req.on("data", d => { cuerpoResp += d; });
     req.on("end", () => {
       cliente.close();
-      resolve({ ok: status === 200, status, detalle: cuerpoResp });
+      // `muerto` normaliza la señal de "este token ya no sirve" para que
+      // server.js no tenga que saber que en APNs es 410 y en FCM es 404.
+      resolve({ ok: status === 200, status, detalle: cuerpoResp,
+                muerto: status === 410 });
     });
     req.on("error", () => { cliente.close(); resolve({ ok: false, motivo: "request" }); });
     req.end(payload);
   });
 }
 
-/// Baja el dispositivo si Apple dice que el token ya no sirve. Sin esto la
-/// tabla se llena de tokens muertos de apps desinstaladas.
+// ── FCM (Android) ────────────────────────────────────────────────────────
+//
+// Firebase Cloud Messaging, HTTP v1. La API vieja de "server key" la apagó
+// Google en 2024, así que hay que firmar un JWT con la cuenta de servicio,
+// canjearlo por un access token de OAuth2 y recién ahí mandar el push.
+//
+// NO SUMA DEPENDENCIAS: el JWT lo firma `jsonwebtoken`, que ya estaba acá
+// para APNs (allá ES256, acá RS256), y el HTTP sale por el `fetch` global de
+// Node 18+. Meter el SDK de firebase-admin por esto serían decenas de
+// megabytes en una instancia Free que ya está justa de horas.
+//
+// La forma del push es distinta a la de APNs y no es casualidad:
+//   · `notification` la muestra el sistema aunque la app esté cerrada.
+//   · `data` viaja aparte y es lo que le permite a la app abrir la ficha
+//     del aeródromo al tocar el aviso. En FCM **todos los valores de `data`
+//     tienen que ser strings**; un número o un null hacen fallar el request
+//     entero con 400.
+//   · `priority: high` es el equivalente de `time-sensitive`: es lo que
+//     saca al teléfono del modo de ahorro para entregarlo ya. Las mejoras
+//     van en `normal`, que llega igual pero puede esperar.
+//   · `channel_id` tiene que coincidir con el canal que crea la app
+//     (`vigilancia`). Si no coincide, Android usa el canal por defecto y el
+//     usuario no puede regular estos avisos aparte del resto.
+
+let accesoFCM = null, accesoFCMts = 0;
+
+function cuentaFCM() {
+  const crudo = process.env.FCM_SERVICE_ACCOUNT;
+  if (!crudo) return null;
+  try {
+    const c = JSON.parse(crudo);
+    if (!c.client_email || !c.private_key || !c.project_id) return null;
+    return c;
+  } catch {
+    console.error("[alertas] FCM_SERVICE_ACCOUNT no es JSON válido");
+    return null;
+  }
+}
+
+export function fcmConfigurado() { return cuentaFCM() !== null; }
+
+/// Access token de OAuth2. Google los da por 1 hora; se reusan 50 minutos,
+/// igual que el bearer de APNs.
+async function accessTokenFCM() {
+  const ahora = Date.now();
+  if (accesoFCM && ahora - accesoFCMts < 50 * 60 * 1000) return accesoFCM;
+  const c = cuentaFCM();
+  if (!c) throw new Error("falta FCM_SERVICE_ACCOUNT");
+
+  const assertion = jwt.sign(
+    {
+      iss: c.client_email,
+      scope: "https://www.googleapis.com/auth/firebase.messaging",
+      aud: "https://oauth2.googleapis.com/token",
+      iat: Math.floor(ahora / 1000),
+      exp: Math.floor(ahora / 1000) + 3600
+    },
+    c.private_key.replace(/\\n/g, "\n"),
+    { algorithm: "RS256" }
+  );
+
+  const r = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion
+    })
+  });
+  const j = await r.json();
+  if (!j.access_token) throw new Error(`OAuth2 sin token: ${JSON.stringify(j)}`);
+  accesoFCM = j.access_token;
+  accesoFCMts = ahora;
+  return accesoFCM;
+}
+
+async function enviarFCM(deviceToken, titulo, cuerpo, urgente, datos) {
+  const c = cuentaFCM();
+  if (!c) return { ok: false, motivo: "FCM sin configurar" };
+
+  let acceso;
+  try {
+    acceso = await accessTokenFCM();
+  } catch (e) {
+    return { ok: false, motivo: `OAuth2: ${e.message}` };
+  }
+
+  // En FCM todos los valores de `data` son strings o el request falla.
+  const limpio = {};
+  if (datos && typeof datos === "object") {
+    for (const [k, v] of Object.entries(datos)) {
+      if (v !== null && v !== undefined && v !== "") limpio[k] = String(v);
+    }
+  }
+
+  const mensaje = {
+    message: {
+      token: deviceToken,
+      notification: { title: titulo, body: cuerpo },
+      ...(Object.keys(limpio).length ? { data: limpio } : {}),
+      android: {
+        priority: urgente ? "high" : "normal",
+        notification: {
+          channel_id: "vigilancia",
+          ...(urgente ? { sound: "default" } : {})
+        }
+      }
+    }
+  };
+
+  try {
+    const r = await fetch(
+      `https://fcm.googleapis.com/v1/projects/${c.project_id}/messages:send`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${acceso}`,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(mensaje)
+      }
+    );
+    const texto = await r.text();
+    // UNREGISTERED / INVALID_ARGUMENT sobre el token = la app se desinstaló
+    // o el token caducó. Es el equivalente del 410 de Apple.
+    const muerto = r.status === 404 || /UNREGISTERED|NotRegistered/i.test(texto);
+    return { ok: r.ok, status: r.status, detalle: texto, muerto };
+  } catch (e) {
+    return { ok: false, motivo: `fetch: ${e.message}` };
+  }
+}
+
+/// Baja el dispositivo cuando la plataforma dice que el token ya no sirve
+/// (410 en Apple, 404/UNREGISTERED en FCM). Sin esto la tabla se llena de
+/// tokens muertos de apps desinstaladas.
 export async function borrarToken(token) {
   if (!pool) return;
   await pool.query("DELETE FROM suscripciones WHERE token = $1", [token]);

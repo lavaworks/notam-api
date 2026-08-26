@@ -420,8 +420,10 @@ async function procesarVigilancia() {
     const ver = est.notamNuevos.length ? "notam"
               : firCerca.length        ? "fir"
               : "metar";
+    // Se pasa la suscripción entera y no sólo el token: adentro decide si
+    // va por APNs o por FCM según `plataforma`.
     const res = await alertas.enviarPush(
-      s.token, s.nombre || s.icao, partes.join(" · "), urgente,
+      s, s.nombre || s.icao, partes.join(" · "), urgente,
       { icao: s.icao, ver, fir: s.fir || null });
 
     if (res.ok) {
@@ -430,8 +432,9 @@ async function procesarVigilancia() {
         climaYaAvisado.get(s.token).add(estacion);
       }
       await alertas.marcarPush(s.token, s.icao);
-    } else if (res.status === 410) {
-      // Apple avisa que el token murió: la app se desinstaló.
+    } else if (res.muerto) {
+      // La plataforma avisa que el token murió: la app se desinstaló.
+      // `muerto` normaliza el 410 de Apple y el 404/UNREGISTERED de FCM.
       await alertas.borrarToken(s.token);
     }
   }
@@ -499,6 +502,7 @@ app.get("/health", async (req, res) => {
     vigilancia: {
       base: alertas.activo(),
       apns: alertas.apnsConfigurado(),
+      fcm: alertas.fcmConfigurado(),
       ...(await alertas.contarSuscripciones())
     }
   });
@@ -591,12 +595,13 @@ app.post("/watch", async (req, res) => {
   if (!alertas.activo()) {
     return res.status(503).json({ error: "vigilancia no disponible" });
   }
-  const { token, aerodromos, reglas } = req.body || {};
+  const { token, aerodromos, reglas, plataforma } = req.body || {};
   if (!token || typeof token !== "string") {
     return res.status(400).json({ error: "falta token" });
   }
   try {
-    await alertas.guardarSuscripcion({ token, aerodromos, reglas });
+    // Sin `plataforma` se asume iOS, que es lo que manda la app publicada.
+    await alertas.guardarSuscripcion({ token, aerodromos, reglas, plataforma });
     res.json({ ok: true, vigilando: (aerodromos || []).length });
   } catch (e) {
     console.error(`[alertas] /watch: ${e.message}`);
@@ -607,11 +612,12 @@ app.post("/watch", async (req, res) => {
 // Push de prueba a un dispositivo, para verificar la cadena entera sin
 // esperar a que cambie el clima de verdad.
 app.post("/watch/test", async (req, res) => {
-  const { token, urgente } = req.body || {};
+  const { token, urgente, plataforma } = req.body || {};
   if (!token) return res.status(400).json({ error: "falta token" });
   // Urgente por defecto: una prueba que no se ve no prueba nada.
   const r = await alertas.enviarPush(
-    token, "Oscar", "Prueba de notificación: la vigilancia está funcionando.",
+    { token, plataforma }, "Oscar",
+    "Prueba de notificación: la vigilancia está funcionando.",
     urgente !== false);
   res.json(r);
 });
