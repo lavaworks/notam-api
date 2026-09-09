@@ -81,7 +81,24 @@ export async function initDB() {
   // "android" explícito.
   for (const col of ["lat DOUBLE PRECISION", "lon DOUBLE PRECISION", "fir TEXT",
                      "estacion TEXT", "nombre TEXT",
-                     "plataforma TEXT NOT NULL DEFAULT 'ios'"]) {
+                     "plataforma TEXT NOT NULL DEFAULT 'ios'",
+                     // (2026-09-09) La campanita pasó a tener dos cosas
+                     // adentro y se prenden por separado. Los defaults
+                     // reproducen el comportamiento anterior —alertas sí,
+                     // briefing no— así que las suscripciones que ya existen
+                     // siguen funcionando igual sin migrarlas a mano.
+                     //
+                     // Van separadas porque son necesidades distintas: hay
+                     // pilotos que sólo quieren enterarse si algo cambia, y un
+                     // push todas las mañanas los haría apagar la campanita
+                     // entera, incluidas las alertas que sí querían.
+                     "alertas BOOLEAN NOT NULL DEFAULT TRUE",
+                     "briefing BOOLEAN NOT NULL DEFAULT FALSE",
+                     // La FECHA del último briefing, no la hora: es lo que
+                     // evita mandar dos el mismo día. La pasada corre cada
+                     // cinco minutos y sin esto saldría uno por pasada
+                     // durante toda la ventana de la mañana.
+                     "ultimo_briefing DATE"]) {
     await pool.query(`ALTER TABLE suscripciones ADD COLUMN IF NOT EXISTS ${col};`);
   }
 
@@ -110,8 +127,8 @@ export async function guardarSuscripcion({ token, aerodromos, reglas, plataforma
         `INSERT INTO suscripciones
            (token, icao, indicador, vence, viento_kt, rafaga_kt,
             visibilidad_m, techo_ft, tormenta, mejoras, lat, lon, fir,
-            estacion, nombre, plataforma)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+            estacion, nombre, plataforma, alertas, briefing)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
         [token, a.icao.toUpperCase(), a.indicador.toUpperCase(), a.vence,
          r.vientoKt ?? 20, r.rafagaKt ?? 25, r.visibilidadM ?? 5000,
          r.techoFt ?? 1500, r.tormenta ?? true, r.mejoras ?? true,
@@ -125,7 +142,12 @@ export async function guardarSuscripcion({ token, aerodromos, reglas, plataforma
          a.estacion ? String(a.estacion).toUpperCase() : null,
          // El título del push: "SRDL" no se lee como Luján.
          a.nombre ? String(a.nombre) : null,
-         plat]
+         plat,
+         // Una app vieja no manda estos dos: se asume el comportamiento de
+         // antes —alertas prendidas, briefing apagado— en vez de dejar al
+         // piloto sin nada o mandarle algo que no pidió.
+         a.alertas ?? true,
+         a.briefing ?? false]
       );
     }
     await cliente.query("COMMIT");
@@ -150,7 +172,8 @@ export async function contarSuscripciones() {
   if (!pool) return { dispositivos: 0, aerodromos: 0 };
   const { rows } = await pool.query(
     `SELECT COUNT(DISTINCT token)::int AS dispositivos,
-            COUNT(DISTINCT icao)::int  AS aerodromos
+            COUNT(DISTINCT icao)::int  AS aerodromos,
+            COUNT(*) FILTER (WHERE briefing)::int AS con_briefing
      FROM suscripciones WHERE vence >= NOW()`
   );
   return rows[0];
@@ -653,6 +676,20 @@ export async function borrarToken(token) {
 
 /// Sella el momento del último aviso, para respetar el techo de uno cada
 /// 30 minutos por aeródromo y dispositivo.
+/// Deja anotado que a este dispositivo ya se le resolvió el briefing de hoy.
+///
+/// La fecha se calcula en la zona de Buenos Aires y no en UTC. Con UTC el
+/// "día" cambiaría a las 21:00 hora local, así que un briefing de la mañana
+/// quedaría fechado el día anterior y al día siguiente saldría uno de más.
+export async function marcarBriefing(token, icao) {
+  if (!pool) return;
+  await pool.query(
+    `UPDATE suscripciones
+        SET ultimo_briefing = (NOW() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date
+      WHERE token = $1 AND icao = $2`,
+    [token, icao]);
+}
+
 export async function marcarPush(token, icao) {
   if (!pool) return;
   await pool.query(
