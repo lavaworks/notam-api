@@ -193,6 +193,47 @@ async function refreshOne(indicador) {
 // sólo para los aeródromos que alguien está vigilando: no tiene sentido
 // traer los 693.
 
+/// TAF de las estaciones vigiladas.
+///
+/// El backend no lo traía: hasta ahora sólo comparaba observaciones para
+/// disparar alertas, y para eso el METAR alcanza. Un briefing sin pronóstico,
+/// en cambio, no sirve de mucho — decir cómo está el cielo AHORA a las seis de
+/// la mañana no ayuda a decidir si se vuela a las diez.
+///
+/// El TAF ocupa varias líneas: la primera trae el indicador y el grupo
+/// horario, y las siguientes van indentadas. Se pegan hasta el próximo
+/// encabezado.
+async function fetchTafs(icaos) {
+  if (icaos.length === 0) return new Map();
+  const url = "https://aviationweather.gov/api/data/taf?format=raw&ids="
+            + icaos.join(",");
+  const out = new Map();
+  try {
+    const r = await fetch(url, { headers: { "User-Agent": "NotamApi/4.0" } });
+    if (!r.ok) throw new Error(`aviationweather TAF respondió ${r.status}`);
+    const texto = await r.text();
+    if (/<html/i.test(texto)) throw new Error("respuesta HTML, no TAF");
+    let actual = null;
+    for (const linea of texto.split("\n")) {
+      const l = linea.trim();
+      if (!l) { actual = null; continue; }
+      let t = l.split(/\s+/);
+      if (t[0] === "TAF") t = t.slice(1);
+      if (t[0] === "AMD" || t[0] === "COR") t = t.slice(1);
+      if (/^[A-Z]{4}$/.test(t[0] || "") && /^\d{6}Z$/.test(t[1] || "")) {
+        actual = t[0];
+        out.set(actual, l);
+      } else if (actual) {
+        out.set(actual, out.get(actual) + " " + l);
+      }
+    }
+  } catch (e) {
+    // El briefing sale igual sin TAF: es un dato más, no un requisito.
+    console.error(`[briefing] TAF no disponible: ${e.message}`);
+  }
+  return out;
+}
+
 async function fetchMetars(icaos) {
   if (icaos.length === 0) return new Map();
   const url = "https://aviationweather.gov/api/data/metar?format=raw&ids="
@@ -250,6 +291,14 @@ async function procesarVigilancia() {
   const estacionDe = s => (s.estacion || s.icao).toUpperCase();
   const estaciones = [...new Set(subs.map(estacionDe))];
   const metars = await fetchMetars(estaciones);
+
+  // El TAF sólo hace falta para el briefing, así que se pide únicamente
+  // dentro de su ventana horaria. Fuera de esa hora sería un pedido de más a
+  // aviationweather cada cinco minutos, todo el día, para nada.
+  const horaBA = horaBuenosAires();
+  const tafs = (horaBA >= BRIEFING_HORA && horaBA < BRIEFING_HORA + BRIEFING_VENTANA_H)
+    ? await fetchTafs(estaciones)
+    : new Map();
 
   // ── NOTAM de FIR ──
   //
@@ -346,6 +395,10 @@ async function procesarVigilancia() {
     porIcao.set(icao, { notamNuevos });
   }
 
+  // El briefing va antes que las alertas y con los mismos datos ya
+  // resueltos: no vuelve a pedir nada.
+  await procesarBriefings(subs, metars, tafs);
+
   // ── Ahora sí, por dispositivo y con SUS umbrales ──
   //
   // Si alguien vigila Luján y Morón a la vez, el METAR es el mismo y sin
@@ -359,6 +412,12 @@ async function procesarVigilancia() {
     (a.icao === estacionDe(a) ? 0 : 1) - (b.icao === estacionDe(b) ? 0 : 1));
 
   for (const s of ordenadas) {
+    // El piloto puede tener prendido sólo el briefing. `!== false` y no
+    // `=== true` a propósito: una fila vieja sin la columna llega como
+    // undefined y tiene que seguir recibiendo alertas, que es lo que hacía
+    // antes de que existiera el interruptor.
+    if (s.alertas === false) continue;
+
     const est = porIcao.get(s.icao);
     if (!est) continue;
 
@@ -440,6 +499,169 @@ async function procesarVigilancia() {
   }
 }
 
+
+// ── Briefing de la mañana ────────────────────────────────────────────────
+//
+// Un push a las 06:00 con cómo viene el día en el aeródromo vigilado.
+//
+// Es la función que el plan gratis de Render hacía IMPOSIBLE: a esa hora la
+// instancia estaba dormida y no había pasada que lo disparara. Desde el
+// 2026-09-09 el servicio es pago y no se duerme más.
+//
+// SE MANDA SÓLO SI HAY ALGO QUE DECIR. Un aviso diario que la mitad de las
+// veces dice "todo bien" entrena a la gente a ignorarlo, y el día que importa
+// tampoco lo miran. El umbral está en `valeLaPena()` y es el mismo que usan
+// las alertas: los límites que el propio piloto configuró.
+//
+// Es independiente de las alertas y se prenden por separado. Alguien puede
+// querer enterarse si el viento se pone feo y no querer un mensaje todas las
+// mañanas; si lo obligáramos a elegir entre las dos cosas, apagaría todo.
+
+/// Hora local de Buenos Aires, sin depender de la del servidor (que corre en
+/// UTC). Se usa la zona horaria en vez de restar 3 a mano: Argentina hoy no
+/// tiene horario de verano, pero si algún día vuelve, esto sigue andando.
+function horaBuenosAires(d = new Date()) {
+  const f = new Intl.DateTimeFormat("es-AR", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    hour: "2-digit", hour12: false
+  }).formatToParts(d);
+  return Number(f.find(p => p.type === "hour")?.value ?? 0);
+}
+
+function fechaBuenosAires(d = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    year: "numeric", month: "2-digit", day: "2-digit"
+  }).format(d);   // "2026-09-09"
+}
+
+/// La ventana en la que sale. Empieza a las 06:00 y dura una hora: si el
+/// servidor estuvo caído justo a las seis en punto, el briefing sale en la
+/// pasada siguiente en lugar de perderse el día entero.
+const BRIEFING_HORA = 6;
+const BRIEFING_VENTANA_H = 1;
+
+/// El METAR traducido a algo que se lee de un vistazo.
+function resumenClima(m) {
+  const p = [];
+  if (m.viento > 0) {
+    p.push(m.rafaga > m.viento
+      ? `viento ${m.viento} kt, ráfagas ${m.rafaga}`
+      : `viento ${m.viento} kt`);
+  } else {
+    p.push("viento calmo");
+  }
+  // 9999 en un METAR significa "10 km o más", no 9,999 km. Mencionarlo
+  // sería informar una limitación que no existe — y en un briefing eso es
+  // peor que callarlo, porque el piloto lee "visibilidad" y presta atención.
+  if (m.vis < 9999) {
+    p.push(`visibilidad ${m.vis < 1000 ? m.vis + " m" : (m.vis / 1000) + " km"}`);
+  }
+  if (m.techo != null) p.push(`techo ${m.techo} ft`);
+  if (m.tormenta) p.push("TORMENTA");
+  return p.join(" · ");
+}
+
+/// Qué anuncia el TAF que ahora mismo no está pasando.
+///
+/// NO se resume el pronóstico entero. Eso es el trabajo del TAF y la app ya
+/// lo muestra completo y decodificado; un briefing que intenta condensarlo
+/// termina escondiendo justo el matiz que importaba. Acá sólo se busca si
+/// aparece alguno de los grupos que anuncian deterioro, para decir "andá a
+/// mirar el TAF".
+function avisoDelTaf(taf) {
+  if (!taf) return null;
+  const t = taf.toUpperCase();
+  const motivos = [];
+  if (/\bTS/.test(t))                          motivos.push("tormenta");
+  if (/\bFG\b|\bBR\b/.test(t))                 motivos.push("niebla o bruma");
+  if (/\b(BKN|OVC)00\d\b/.test(t))             motivos.push("techo bajo");
+  if (/\bSN\b|\bFZ/.test(t))                   motivos.push("nieve o engelamiento");
+  if (/G[2-9]\dKT/.test(t))                    motivos.push("ráfagas fuertes");
+  if (motivos.length === 0) return null;
+  return "El TAF anuncia " + motivos.join(", ") + ".";
+}
+
+/// Decide si este briefing amerita interrumpir a alguien.
+function valeLaPena({ clima, notams, avisoTaf, s }) {
+  if (notams.length > 0) return true;
+  if (avisoTaf) return true;
+  if (!clima) return false;
+  if (clima.tormenta && s.tormenta) return true;
+  if (clima.viento >= s.viento_kt) return true;
+  if (clima.rafaga >= s.rafaga_kt) return true;
+  if (clima.vis <= s.visibilidad_m) return true;
+  if (clima.techo != null && clima.techo <= s.techo_ft) return true;
+  return false;
+}
+
+async function procesarBriefings(subs, metars, tafs) {
+  const h = horaBuenosAires();
+  if (h < BRIEFING_HORA || h >= BRIEFING_HORA + BRIEFING_VENTANA_H) return;
+
+  const hoy = fechaBuenosAires();
+  const pendientes = subs.filter(s =>
+    s.briefing === true &&
+    (!s.ultimo_briefing || fechaBuenosAires(new Date(s.ultimo_briefing)) !== hoy));
+  if (pendientes.length === 0) return;
+
+  let enviados = 0, callados = 0;
+
+  for (const s of pendientes) {
+    const estacion = (s.estacion || s.icao).toUpperCase();
+    const raw = metars.get(estacion);
+    const clima = raw ? alertas.parseMetar(raw) : null;
+    const avisoTaf = avisoDelTaf(tafs.get(estacion));
+
+    // NOTAM VIGENTES, no sólo los nuevos. Para una alerta importa lo que
+    // cambió; para un briefing importa lo que hay: uno de anteayer sigue
+    // afectando el vuelo de hoy.
+    const entrada = cache.get(s.indicador);
+    const notams = (entrada && !scrapeErrors.has(s.indicador))
+      ? entrada.data.notams.filter(n => n.numero)
+      : [];
+
+    if (!valeLaPena({ clima, notams, avisoTaf, s })) {
+      // Se marca igual aunque no se mande. Si no, cada pasada de la ventana
+      // volvería a evaluar y el primer minuto en que algo cruzara un umbral
+      // saldría un "briefing" a las 6:40, que no es un briefing: es una
+      // alerta disfrazada, y para eso ya está la otra mitad de la campanita.
+      await alertas.marcarBriefing(s.token, s.icao);
+      callados++;
+      continue;
+    }
+
+    const partes = [];
+    partes.push(clima ? resumenClima(clima) : "sin METAR reciente");
+    if (clima && estacion !== s.icao) partes.push(`(METAR ${estacion})`);
+    if (avisoTaf) partes.push(avisoTaf);
+    if (notams.length) {
+      partes.push(notams.length === 1
+        ? `1 NOTAM vigente: ${notams[0].numero}`
+        : `${notams.length} NOTAM vigentes`);
+    }
+
+    const res = await alertas.enviarPush(
+      s, `Buen día · ${s.nombre || s.icao}`, partes.join(" · "),
+      // NUNCA urgente: llega a las seis de la mañana y no tiene por qué
+      // sonar. Se ve en la pantalla bloqueada cuando el piloto levanta el
+      // teléfono, que es cuando lo va a leer.
+      false,
+      { icao: s.icao, ver: notams.length ? "notam" : "metar", fir: s.fir || null });
+
+    if (res.ok) {
+      await alertas.marcarBriefing(s.token, s.icao);
+      enviados++;
+    } else if (res.muerto) {
+      await alertas.borrarToken(s.token);
+    }
+  }
+
+  if (enviados || callados) {
+    console.log(`[briefing] ${enviados} enviados, ${callados} sin novedad`);
+  }
+}
+
 // ── Loop ─────────────────────────────────────────────────────────────────
 
 async function refresherLoop() {
@@ -479,14 +701,14 @@ async function refresherLoop() {
 // ── Endpoints ────────────────────────────────────────────────────────────
 
 app.get("/", (req, res) => {
-  res.json({ status: "ok", service: "NOTAM API", version: 6, example: "/notams/MOR" });
+  res.json({ status: "ok", service: "NOTAM API", version: 8, example: "/notams/MOR" });
 });
 
 app.get("/health", async (req, res) => {
   const timestamps = [...cache.values()].map(e => e.timestamp);
   res.json({
     ok: true,
-    version: 6,
+    version: 8,
     uptime_s: Math.round((Date.now() - startedAt) / 1000),
     locations_activas: locations.size,
     locations_updated_s: locationsUpdatedAt
