@@ -556,8 +556,12 @@ function resumenClima(m) {
   // peor que callarlo, porque el piloto lee "visibilidad" y presta atención.
   if (m.vis < 9999) {
     p.push(`visibilidad ${m.vis < 1000 ? m.vis + " m" : (m.vis / 1000) + " km"}`);
+  } else {
+    // En un informe SÍ se dice, aunque sea buena noticia: el que lo lee
+    // quiere saber que el dato está y que es bueno, no deducirlo del hueco.
+    p.push("visibilidad 10 km o más");
   }
-  if (m.techo != null) p.push(`techo ${m.techo} ft`);
+  p.push(m.techo != null ? `techo ${m.techo} ft` : "sin techo");
   if (m.tormenta) p.push("TORMENTA");
   return p.join(" · ");
 }
@@ -605,7 +609,7 @@ async function procesarBriefings(subs, metars, tafs) {
     (!s.ultimo_briefing || fechaBuenosAires(new Date(s.ultimo_briefing)) !== hoy));
   if (pendientes.length === 0) return;
 
-  let enviados = 0, callados = 0;
+  let enviados = 0, conNovedades = 0;
 
   for (const s of pendientes) {
     const estacion = (s.estacion || s.icao).toUpperCase();
@@ -621,28 +625,42 @@ async function procesarBriefings(subs, metars, tafs) {
       ? entrada.data.notams.filter(n => n.numero)
       : [];
 
-    if (!valeLaPena({ clima, notams, avisoTaf, s })) {
-      // Se marca igual aunque no se mande. Si no, cada pasada de la ventana
-      // volvería a evaluar y el primer minuto en que algo cruzara un umbral
-      // saldría un "briefing" a las 6:40, que no es un briefing: es una
-      // alerta disfrazada, y para eso ya está la otra mitad de la campanita.
-      await alertas.marcarBriefing(s.token, s.icao);
-      callados++;
-      continue;
-    }
+    // EL BRIEFING SE MANDA SIEMPRE.
+    //
+    // Antes se callaba si nada cruzaba un umbral, y eso lo convertía en una
+    // alerta disfrazada: para avisar de lo que cambió ya está la otra mitad
+    // de la campanita. Un informe informa, aunque la noticia sea que está
+    // todo bien — de hecho ESA es la noticia que el piloto quiere a las seis
+    // de la mañana.
+    //
+    // Y el silencio era ambiguo: no había forma de distinguir "no hay
+    // novedades" de "se rompió algo". El día que el briefing falle de verdad,
+    // su ausencia tiene que significar una sola cosa.
+    //
+    // Nadie recibe esto sin haberlo pedido: es un interruptor aparte que
+    // arranca apagado.
+    const hayNovedades = valeLaPena({ clima, notams, avisoTaf, s });
+    if (hayNovedades) conNovedades++;
 
     const partes = [];
     partes.push(clima ? resumenClima(clima) : "sin METAR reciente");
     if (clima && estacion !== s.icao) partes.push(`(METAR ${estacion})`);
     if (avisoTaf) partes.push(avisoTaf);
-    if (notams.length) {
-      partes.push(notams.length === 1
-        ? `1 NOTAM vigente: ${notams[0].numero}`
+    // El cero también se dice. "Sin NOTAM vigentes" es información: significa
+    // que se consultó y no hay, no que no se miró.
+    partes.push(
+      notams.length === 0 ? "sin NOTAM vigentes"
+        : notams.length === 1 ? `1 NOTAM vigente: ${notams[0].numero}`
         : `${notams.length} NOTAM vigentes`);
-    }
+    if (!hayNovedades) partes.push("Todo dentro de tus límites");
 
     const res = await alertas.enviarPush(
-      s, `Buen día · ${s.nombre || s.icao}`, partes.join(" · "),
+      s,
+      // El título dice de un vistazo si hay que leerlo o alcanza con verlo
+      // pasar. `valeLaPena` sigue sirviendo para esto, que era su buena idea:
+      // lo que estaba mal era usarla para decidir si mandar o no.
+      `${hayNovedades ? "Atención" : "Buen día"} · ${s.nombre || s.icao}`,
+      partes.join(" · "),
       // NUNCA urgente: llega a las seis de la mañana y no tiene por qué
       // sonar. Se ve en la pantalla bloqueada cuando el piloto levanta el
       // teléfono, que es cuando lo va a leer.
@@ -657,8 +675,8 @@ async function procesarBriefings(subs, metars, tafs) {
     }
   }
 
-  if (enviados || callados) {
-    console.log(`[briefing] ${enviados} enviados, ${callados} sin novedad`);
+  if (enviados) {
+    console.log(`[briefing] ${enviados} enviados, ${conNovedades} con novedades`);
   }
 }
 
@@ -701,14 +719,14 @@ async function refresherLoop() {
 // ── Endpoints ────────────────────────────────────────────────────────────
 
 app.get("/", (req, res) => {
-  res.json({ status: "ok", service: "NOTAM API", version: 8, example: "/notams/MOR" });
+  res.json({ status: "ok", service: "NOTAM API", version: 9, example: "/notams/MOR" });
 });
 
 app.get("/health", async (req, res) => {
   const timestamps = [...cache.values()].map(e => e.timestamp);
   res.json({
     ok: true,
-    version: 8,
+    version: 9,
     uptime_s: Math.round((Date.now() - startedAt) / 1000),
     locations_activas: locations.size,
     locations_updated_s: locationsUpdatedAt
