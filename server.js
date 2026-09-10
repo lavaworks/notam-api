@@ -652,7 +652,12 @@ async function procesarBriefings(subs, metars, tafs) {
       notams.length === 0 ? "sin NOTAM vigentes"
         : notams.length === 1 ? `1 NOTAM vigente: ${notams[0].numero}`
         : `${notams.length} NOTAM vigentes`);
-    if (!hayNovedades) partes.push("Todo dentro de tus límites");
+    // NO se agrega un "todo bien" al final. Decía "Todo dentro de tus límites"
+    // y era mentira: los umbrales existen y viajan por dispositivo, pero la
+    // app todavía no tiene pantalla para editarlos, así que son los valores
+    // por defecto y el piloto nunca puso ninguno. Los datos ya cuentan solos
+    // que el día está tranquilo; no hace falta una frase que además reclame
+    // una configuración que no existe.
 
     const res = await alertas.enviarPush(
       s,
@@ -719,14 +724,14 @@ async function refresherLoop() {
 // ── Endpoints ────────────────────────────────────────────────────────────
 
 app.get("/", (req, res) => {
-  res.json({ status: "ok", service: "NOTAM API", version: 9, example: "/notams/MOR" });
+  res.json({ status: "ok", service: "NOTAM API", version: 10, example: "/notams/MOR" });
 });
 
 app.get("/health", async (req, res) => {
   const timestamps = [...cache.values()].map(e => e.timestamp);
   res.json({
     ok: true,
-    version: 9,
+    version: 10,
     uptime_s: Math.round((Date.now() - startedAt) / 1000),
     locations_activas: locations.size,
     locations_updated_s: locationsUpdatedAt
