@@ -643,6 +643,11 @@ async function procesarBriefings(subs, metars, tafs) {
     if (hayNovedades) conNovedades++;
 
     const partes = [];
+    // "Atención" pasó del título al cuerpo. El título ahora es siempre el
+    // mismo porque es la identidad de la función: el piloto tiene que
+    // reconocer de qué le están hablando antes de leer nada. La urgencia va
+    // primera en el cuerpo, que es lo otro que iOS muestra sin desplegar.
+    if (hayNovedades) partes.push("Atención");
     partes.push(clima ? resumenClima(clima) : "sin METAR reciente");
     if (clima && estacion !== s.icao) partes.push(`(METAR ${estacion})`);
     if (avisoTaf) partes.push(avisoTaf);
@@ -661,10 +666,12 @@ async function procesarBriefings(subs, metars, tafs) {
 
     const res = await alertas.enviarPush(
       s,
-      // El título dice de un vistazo si hay que leerlo o alcanza con verlo
-      // pasar. `valeLaPena` sigue sirviendo para esto, que era su buena idea:
-      // lo que estaba mal era usarla para decidir si mandar o no.
-      `${hayNovedades ? "Atención" : "Buen día"} · ${s.nombre || s.icao}`,
+      // Título fijo: le da identidad a la función. Entre veinte
+      // notificaciones de veinte apps, "Reporte matutino" se reconoce sin
+      // leer el resto — y es lo que el piloto eligió recibir, con ese nombre.
+      // Entra entero en la pantalla bloqueada: 24 caracteres con un
+      // aeródromo de nombre corto.
+      `Reporte matutino · ${s.nombre || s.icao}`,
       partes.join(" · "),
       // NUNCA urgente: llega a las seis de la mañana y no tiene por qué
       // sonar. Se ve en la pantalla bloqueada cuando el piloto levanta el
@@ -724,14 +731,14 @@ async function refresherLoop() {
 // ── Endpoints ────────────────────────────────────────────────────────────
 
 app.get("/", (req, res) => {
-  res.json({ status: "ok", service: "NOTAM API", version: 10, example: "/notams/MOR" });
+  res.json({ status: "ok", service: "NOTAM API", version: 11, example: "/notams/MOR" });
 });
 
 app.get("/health", async (req, res) => {
   const timestamps = [...cache.values()].map(e => e.timestamp);
   res.json({
     ok: true,
-    version: 10,
+    version: 11,
     uptime_s: Math.round((Date.now() - startedAt) / 1000),
     locations_activas: locations.size,
     locations_updated_s: locationsUpdatedAt
