@@ -508,10 +508,17 @@ async function procesarVigilancia() {
 // instancia estaba dormida y no había pasada que lo disparara. Desde el
 // 2026-09-09 el servicio es pago y no se duerme más.
 //
-// SE MANDA SÓLO SI HAY ALGO QUE DECIR. Un aviso diario que la mitad de las
-// veces dice "todo bien" entrena a la gente a ignorarlo, y el día que importa
-// tampoco lo miran. El umbral está en `valeLaPena()` y es el mismo que usan
-// las alertas: los límites que el propio piloto configuró.
+// SE MANDA TODOS LOS DÍAS, esté el tiempo lindo o feo. Un informe que sólo
+// aparece cuando hay problemas es una alerta, no un informe — y para eso ya
+// está la otra mitad de la campanita. Además el silencio era ambiguo: no había
+// forma de distinguir "no hay novedades" de "se rompió algo".
+//
+// Y NO INTERPRETA. Se dan los datos y el piloto decide a qué prestarle
+// atención. Hubo una versión que anteponía "Atención" cuando algo cruzaba un
+// umbral y se sacó: la palabra quedaba colgada, sin decir de qué, y un rótulo
+// que no explica nada es peor que ninguno. Los números hablan solos —viento 22
+// kt, ráfagas 31, techo 800 ft— y quien tiene que decidir si eso es un
+// problema es el que va a volar, no el servidor.
 //
 // Es independiente de las alertas y se prenden por separado. Alguien puede
 // querer enterarse si el viento se pone feo y no querer un mensaje todas las
@@ -542,26 +549,33 @@ const BRIEFING_HORA = 6;
 const BRIEFING_VENTANA_H = 1;
 
 /// El METAR traducido a algo que se lee de un vistazo.
+// Cada dato con su rótulo: "Viento: 6 kt", no "viento 6 kt".
+//
+// El renglón es una tira de valores separados por puntos, y sin rótulo hay que
+// deducir de qué es cada número por la unidad. Con el rótulo adelante se
+// escanea en diagonal y se encuentra el que uno fue a buscar.
 function resumenClima(m) {
   const p = [];
   if (m.viento > 0) {
     p.push(m.rafaga > m.viento
-      ? `viento ${m.viento} kt, ráfagas ${m.rafaga}`
-      : `viento ${m.viento} kt`);
+      ? `Viento: ${m.viento} kt, ráfagas ${m.rafaga}`
+      : `Viento: ${m.viento} kt`);
   } else {
-    p.push("viento calmo");
+    p.push("Viento: calmo");
   }
   // 9999 en un METAR significa "10 km o más", no 9,999 km. Mencionarlo
   // sería informar una limitación que no existe — y en un briefing eso es
   // peor que callarlo, porque el piloto lee "visibilidad" y presta atención.
   if (m.vis < 9999) {
-    p.push(`visibilidad ${m.vis < 1000 ? m.vis + " m" : (m.vis / 1000) + " km"}`);
+    p.push(`Visibilidad: ${m.vis < 1000 ? m.vis + " m" : (m.vis / 1000) + " km"}`);
   } else {
     // En un informe SÍ se dice, aunque sea buena noticia: el que lo lee
     // quiere saber que el dato está y que es bueno, no deducirlo del hueco.
-    p.push("visibilidad 10 km o más");
+    p.push("Visibilidad: 10 km o más");
   }
-  p.push(m.techo != null ? `techo ${m.techo} ft` : "sin techo");
+  // "Techo: sin techo" es una redundancia fea. Cuando no hay capa BKN u OVC
+  // reportada se dice qué se ve, no qué falta.
+  p.push(m.techo != null ? `Techo: ${m.techo} ft` : "Techo: sin nubes bajas");
   if (m.tormenta) p.push("TORMENTA");
   return p.join(" · ");
 }
@@ -584,19 +598,6 @@ function avisoDelTaf(taf) {
   if (/G[2-9]\dKT/.test(t))                    motivos.push("ráfagas fuertes");
   if (motivos.length === 0) return null;
   return "El TAF anuncia " + motivos.join(", ") + ".";
-}
-
-/// Decide si este briefing amerita interrumpir a alguien.
-function valeLaPena({ clima, notams, avisoTaf, s }) {
-  if (notams.length > 0) return true;
-  if (avisoTaf) return true;
-  if (!clima) return false;
-  if (clima.tormenta && s.tormenta) return true;
-  if (clima.viento >= s.viento_kt) return true;
-  if (clima.rafaga >= s.rafaga_kt) return true;
-  if (clima.vis <= s.visibilidad_m) return true;
-  if (clima.techo != null && clima.techo <= s.techo_ft) return true;
-  return false;
 }
 
 /// Lee una columna DATE de Postgres como el día calendario que realmente
@@ -632,7 +633,7 @@ async function procesarBriefings(subs, metars, tafs) {
     (!s.ultimo_briefing || fechaDeColumna(s.ultimo_briefing) !== hoy));
   if (pendientes.length === 0) return;
 
-  let enviados = 0, conNovedades = 0;
+  let enviados = 0;
 
   for (const s of pendientes) {
     const estacion = (s.estacion || s.icao).toUpperCase();
@@ -662,24 +663,18 @@ async function procesarBriefings(subs, metars, tafs) {
     //
     // Nadie recibe esto sin haberlo pedido: es un interruptor aparte que
     // arranca apagado.
-    const hayNovedades = valeLaPena({ clima, notams, avisoTaf, s });
-    if (hayNovedades) conNovedades++;
-
+    // Sólo datos, sin rótulos de interpretación. El cuerpo arranca con el
+    // clima porque es lo que iOS muestra sin desplegar.
     const partes = [];
-    // "Atención" pasó del título al cuerpo. El título ahora es siempre el
-    // mismo porque es la identidad de la función: el piloto tiene que
-    // reconocer de qué le están hablando antes de leer nada. La urgencia va
-    // primera en el cuerpo, que es lo otro que iOS muestra sin desplegar.
-    if (hayNovedades) partes.push("Atención");
     partes.push(clima ? resumenClima(clima) : "sin METAR reciente");
     if (clima && estacion !== s.icao) partes.push(`(METAR ${estacion})`);
     if (avisoTaf) partes.push(avisoTaf);
     // El cero también se dice. "Sin NOTAM vigentes" es información: significa
     // que se consultó y no hay, no que no se miró.
     partes.push(
-      notams.length === 0 ? "sin NOTAM vigentes"
-        : notams.length === 1 ? `1 NOTAM vigente: ${notams[0].numero}`
-        : `${notams.length} NOTAM vigentes`);
+      notams.length === 0 ? "NOTAM: sin novedades"
+        : notams.length === 1 ? `NOTAM: 1 vigente (${notams[0].numero})`
+        : `NOTAM: ${notams.length} vigentes`);
     // NO se agrega un "todo bien" al final. Decía "Todo dentro de tus límites"
     // y era mentira: los umbrales existen y viajan por dispositivo, pero la
     // app todavía no tiene pantalla para editarlos, así que son los valores
@@ -703,7 +698,7 @@ async function procesarBriefings(subs, metars, tafs) {
       // leer el resto — y es lo que el piloto eligió recibir, con ese nombre.
       // Entra entero en la pantalla bloqueada: 24 caracteres con un
       // aeródromo de nombre corto.
-      `Reporte matutino · ${s.nombre || s.icao}`,
+      `Reporte matutino: ${s.nombre || s.icao}`,
       partes.join(" · "),
       // NUNCA urgente: llega a las seis de la mañana y no tiene por qué
       // sonar. Se ve en la pantalla bloqueada cuando el piloto levanta el
@@ -719,7 +714,7 @@ async function procesarBriefings(subs, metars, tafs) {
   }
 
   if (enviados) {
-    console.log(`[briefing] ${enviados} enviados, ${conNovedades} con novedades`);
+    console.log(`[briefing] ${enviados} enviados`);
   }
 }
 
@@ -762,14 +757,14 @@ async function refresherLoop() {
 // ── Endpoints ────────────────────────────────────────────────────────────
 
 app.get("/", (req, res) => {
-  res.json({ status: "ok", service: "NOTAM API", version: 12, example: "/notams/MOR" });
+  res.json({ status: "ok", service: "NOTAM API", version: 13, example: "/notams/MOR" });
 });
 
 app.get("/health", async (req, res) => {
   const timestamps = [...cache.values()].map(e => e.timestamp);
   res.json({
     ok: true,
-    version: 12,
+    version: 13,
     uptime_s: Math.round((Date.now() - startedAt) / 1000),
     locations_activas: locations.size,
     locations_updated_s: locationsUpdatedAt
