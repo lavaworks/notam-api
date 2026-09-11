@@ -599,6 +599,29 @@ function valeLaPena({ clima, notams, avisoTaf, s }) {
   return false;
 }
 
+/// Lee una columna DATE de Postgres como el día calendario que realmente
+/// guarda, sin pasarla por ningún huso.
+///
+/// EL BUG QUE ARREGLA (2026-09-11): el reporte matutino llegó tres veces
+/// seguidas, a las 6:01, 6:06 y 6:11 — la cadencia del scraper.
+///
+/// `marcarBriefing` guardaba bien la fecha de Buenos Aires. El problema era
+/// leerla: node-postgres devuelve un DATE como un `Date` a medianoche del huso
+/// DEL PROCESO, que en Render es UTC. Pasarlo después por
+/// `fechaBuenosAires()` lo convertía otra vez, y medianoche UTC son las 21:00
+/// del día anterior en Buenos Aires. O sea que siempre leía un día menos,
+/// nunca coincidía con hoy, y cada vuelta del loop lo mandaba de nuevo.
+///
+/// La columna ya ES una fecha de calendario, no un instante. Se leen sus
+/// partes tal cual —locales, porque así la construyó el driver— y listo. Un
+/// DATE no se convierte de huso: eso es lo que causó el bug.
+function fechaDeColumna(v) {
+  if (!v) return null;
+  if (typeof v === "string") return v.slice(0, 10);
+  const dosDigitos = n => String(n).padStart(2, "0");
+  return `${v.getFullYear()}-${dosDigitos(v.getMonth() + 1)}-${dosDigitos(v.getDate())}`;
+}
+
 async function procesarBriefings(subs, metars, tafs) {
   const h = horaBuenosAires();
   if (h < BRIEFING_HORA || h >= BRIEFING_HORA + BRIEFING_VENTANA_H) return;
@@ -606,7 +629,7 @@ async function procesarBriefings(subs, metars, tafs) {
   const hoy = fechaBuenosAires();
   const pendientes = subs.filter(s =>
     s.briefing === true &&
-    (!s.ultimo_briefing || fechaBuenosAires(new Date(s.ultimo_briefing)) !== hoy));
+    (!s.ultimo_briefing || fechaDeColumna(s.ultimo_briefing) !== hoy));
   if (pendientes.length === 0) return;
 
   let enviados = 0, conNovedades = 0;
@@ -664,6 +687,15 @@ async function procesarBriefings(subs, metars, tafs) {
     // que el día está tranquilo; no hace falta una frase que además reclame
     // una configuración que no existe.
 
+    // Se marca ANTES de mandar, no después.
+    //
+    // Antes se marcaba sólo si el push salía bien, para poder reintentar. Pero
+    // el reintento cae en la misma ventana de una hora y vuelve cada cinco
+    // minutos: si algo falla, en vez de un briefing perdido son doce
+    // repetidos. Entre perderse un reporte matutino un día y despertar a
+    // alguien doce veces, la elección es fácil.
+    await alertas.marcarBriefing(s.token, s.icao);
+
     const res = await alertas.enviarPush(
       s,
       // Título fijo: le da identidad a la función. Entre veinte
@@ -680,7 +712,6 @@ async function procesarBriefings(subs, metars, tafs) {
       { icao: s.icao, ver: notams.length ? "notam" : "metar", fir: s.fir || null });
 
     if (res.ok) {
-      await alertas.marcarBriefing(s.token, s.icao);
       enviados++;
     } else if (res.muerto) {
       await alertas.borrarToken(s.token);
@@ -731,14 +762,14 @@ async function refresherLoop() {
 // ── Endpoints ────────────────────────────────────────────────────────────
 
 app.get("/", (req, res) => {
-  res.json({ status: "ok", service: "NOTAM API", version: 11, example: "/notams/MOR" });
+  res.json({ status: "ok", service: "NOTAM API", version: 12, example: "/notams/MOR" });
 });
 
 app.get("/health", async (req, res) => {
   const timestamps = [...cache.values()].map(e => e.timestamp);
   res.json({
     ok: true,
-    version: 11,
+    version: 12,
     uptime_s: Math.round((Date.now() - startedAt) / 1000),
     locations_activas: locations.size,
     locations_updated_s: locationsUpdatedAt
