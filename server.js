@@ -408,6 +408,19 @@ async function procesarVigilancia() {
   // de cada aeródromo—. Se ordena para que gane el aeródromo que ES la
   // estación, que es donde el dato realmente se midió.
   const climaYaAvisado = new Map();   // token → Set de estaciones
+
+  // Lo mismo para los avisos de FIR, y por el mismo motivo.
+  //
+  // El caso real (2026-09-15): un piloto con la campanita en Morón y en
+  // Venado Tuerto recibió DOS veces el mismo aviso de FIR Ezeiza. Los dos
+  // aeródromos están en esa FIR y el NOTAM cae cerca de los dos, así que se
+  // armaron dos notificaciones — distintas para el servidor, el mismo evento
+  // para el piloto.
+  //
+  // El dedup de clima ya existía; a los avisos de FIR les faltaba. Se hace
+  // por NÚMERO de NOTAM y no por FIR: si en la misma pasada aparecen dos
+  // avisos distintos, los dos tienen que llegar.
+  const firYaAvisado = new Map();     // token → Set de números de NOTAM
   const ordenadas = [...subs].sort((a, b) =>
     (a.icao === estacionDe(a) ? 0 : 1) - (b.icao === estacionDe(b) ? 0 : 1));
 
@@ -448,7 +461,9 @@ async function procesarVigilancia() {
     // sería decidir por el piloto.
     let firCerca = [];
     if (s.fir && s.lat != null && s.lon != null) {
+      const yaMandados = firYaAvisado.get(s.token);
       firCerca = (nuevosPorFir.get(s.fir) || []).filter(n =>
+        !yaMandados?.has(n.numero) &&
         alertas.notamFirAfecta(n.texto, { lat: s.lat, lon: s.lon }).afecta);
     }
     if (firCerca.length) {
@@ -489,6 +504,13 @@ async function procesarVigilancia() {
       if (textosClima.length) {
         if (!climaYaAvisado.has(s.token)) climaYaAvisado.set(s.token, new Set());
         climaYaAvisado.get(s.token).add(estacion);
+      }
+      // Se anotan recién si el push SALIÓ. Si falló, el próximo aeródromo
+      // del mismo dispositivo tiene que poder avisarlo: perder el aviso es
+      // peor que repetirlo.
+      if (firCerca.length) {
+        if (!firYaAvisado.has(s.token)) firYaAvisado.set(s.token, new Set());
+        for (const n of firCerca) firYaAvisado.get(s.token).add(n.numero);
       }
       await alertas.marcarPush(s.token, s.icao);
     } else if (res.muerto) {
@@ -757,14 +779,14 @@ async function refresherLoop() {
 // ── Endpoints ────────────────────────────────────────────────────────────
 
 app.get("/", (req, res) => {
-  res.json({ status: "ok", service: "NOTAM API", version: 13, example: "/notams/MOR" });
+  res.json({ status: "ok", service: "NOTAM API", version: 14, example: "/notams/MOR" });
 });
 
 app.get("/health", async (req, res) => {
   const timestamps = [...cache.values()].map(e => e.timestamp);
   res.json({
     ok: true,
-    version: 13,
+    version: 14,
     uptime_s: Math.round((Date.now() - startedAt) / 1000),
     locations_activas: locations.size,
     locations_updated_s: locationsUpdatedAt
