@@ -922,6 +922,32 @@ app.post("/watch/test", async (req, res) => {
   res.json(r);
 });
 
+// ── Fotos de la enciclopedia de aviones ──────────────────────────────────
+//
+// Las imagenes que la app baja para la Enciclopedia de Aviones de Academia.
+// Viven en fotos_aviones/ y se sirven tal cual: no hay logica, no tocan la
+// base y no dependen de nada mas. Si esto se cae, la enciclopedia muestra el
+// hueco y el resto de cada ficha —que es lo que ensena— sigue funcionando.
+//
+// POR QUE NO SE SIRVEN DESDE WIKIMEDIA, QUE ES DE DONDE SALIERON
+// --------------------------------------------------------------
+// Porque Wikimedia pide expresamente que su servidor de miniaturas no se use
+// como CDN, y porque renombra y borra archivos sin aviso: una foto que hoy
+// responde manana puede ser un 404 dentro de una app publicada. La atribucion
+// se mantiene igual —autor, licencia y enlace al original viajan en
+// aviones.json y la ficha los muestra al pie—, y esta el CREDITOS.txt de la
+// carpeta para quien mire el repo y no la app.
+//
+// immutable y un ano de cache: el nombre del archivo identifica la foto, asi
+// que una foto que cambia es una foto nueva con otro nombre. El telefono
+// ademas guarda la suya en disco y no vuelve a pedirla.
+//
+// fallthrough deja pasar al 404 normal de la API lo que no exista aca, en vez
+// de cortar la cadena de rutas.
+app.use("/fotos/aviones", express.static("fotos_aviones", {
+  maxAge: "365d", immutable: true, index: false, fallthrough: true,
+}));
+
 app.listen(PORT, async () => {
   // Se baja el índice de cartas al arrancar para que el primer piloto que
   // abra una ficha no espere los 6 MB. Si falla, no pasa nada: se reintenta
