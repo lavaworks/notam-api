@@ -1,0 +1,377 @@
+CREDITOS DE LAS FOTOS
+
+Todas las imagenes de esta carpeta provienen de Wikimedia Commons y se
+redistribuyen bajo la licencia que indica cada una. Las CC BY y CC BY-SA
+exigen atribucion: por eso este archivo, y por eso la app muestra el autor,
+la licencia y el enlace al original al pie de cada ficha.
+
+Se aceptaron dominio publico, CC0, CC BY y CC BY-SA. NO se acepta GFDL a
+secas: esa licencia obliga a reproducir su texto completo junto a la obra.
+
+------------------------------------------------------------------------
+
+avion_atr72.jpg  /  avion_atr72_mini.jpg
+  ATR 72
+  Autor:    Ronnie Robertson
+  Licencia: CC BY-SA 2.0  <https://creativecommons.org/licenses/by-sa/2.0>
+  Original: https://commons.wikimedia.org/wiki/File:ATR_72_G-FBXB_MG_7082.jpg
+
+avion_ab115.jpg  /  avion_ab115_mini.jpg
+  Aero Boero AB-115
+  Autor:    www.CoelhoVoador.net
+  Licencia: CC BY 2.0  <https://creativecommons.org/licenses/by/2.0>
+  Original: https://commons.wikimedia.org/wiki/File:Aero_Boero_AB-115.jpg
+
+avion_ab180.jpg  /  avion_ab180_mini.jpg
+  Aero Boero AB-180
+  Autor:    Rafael Kage
+  Licencia: CC BY 2.0  <https://creativecommons.org/licenses/by/2.0>
+  Original: https://commons.wikimedia.org/wiki/File:Aero_Boero_AB-180.jpg
+
+avion_aerocommander.jpg  /  avion_aerocommander_mini.jpg
+  Aero Commander 500
+  Autor:    Aeroprints.com
+  Licencia: CC BY-SA 3.0  <https://creativecommons.org/licenses/by-sa/3.0>
+  Original: https://commons.wikimedia.org/wiki/File:T-137_Aero_Commander_500_Fuerza_Aerea_Argentina_%288164167486%29.jpg
+
+avion_at502.jpg  /  avion_at502_mini.jpg
+  Air Tractor AT-502
+  Autor:    TomFawls
+  Licencia: CC BY-SA 3.0  <https://creativecommons.org/licenses/by-sa/3.0>
+  Original: https://commons.wikimedia.org/wiki/File:Air_Tractor_AT-502B.jpg
+
+avion_at802.jpg  /  avion_at802_mini.jpg
+  Air Tractor AT-802
+  Autor:    Gons
+  Licencia: CC BY-SA 4.0  <https://creativecommons.org/licenses/by-sa/4.0>
+  Original: https://commons.wikimedia.org/wiki/File:Air_Tractor_AT-802.JPG
+
+avion_a320.jpg  /  avion_a320_mini.jpg
+  Airbus A320
+  Autor:    Aeroprints.com
+  Licencia: CC BY-SA 3.0  <https://creativecommons.org/licenses/by-sa/3.0>
+  Original: https://commons.wikimedia.org/wiki/File:D-ARFC_Airbus_A320_Aero_Flight_%288554683672%29.jpg
+
+avion_a330.jpg  /  avion_a330_mini.jpg
+  Airbus A330
+  Autor:    Gordon Leggett
+  Licencia: CC BY-SA 4.0  <https://creativecommons.org/licenses/by-sa/4.0>
+  Original: https://commons.wikimedia.org/wiki/File:2017-09-20_02_Air_Greenland_Airbus_A330-200_%28OY-GRN%29_at_Kangerlussuaq_Airport_%28SFJ%29%2C_Greenlan.jpg
+
+avion_citabria.jpg  /  avion_citabria_mini.jpg
+  American Champion Citabria
+  Autor:    James from Cheltenham, Gloucestershire
+  Licencia: CC BY-SA 2.0  <https://creativecommons.org/licenses/by-sa/2.0>
+  Original: https://commons.wikimedia.org/wiki/File:G-AYXU_Citabria_%2828186991572%29.jpg
+
+avion_baron.jpg  /  avion_baron_mini.jpg
+  Beechcraft Baron 58
+  Autor:    Bidgee
+  Licencia: CC BY-SA 3.0 au  <https://creativecommons.org/licenses/by-sa/3.0/au/deed.en>
+  Original: https://commons.wikimedia.org/wiki/File:BPW_Aviation_%28VH-SQC%29_Beechcraft_58_Baron_at_Wagga_Wagga_Airport.jpg
+
+avion_bonanza36.jpg  /  avion_bonanza36_mini.jpg
+  Beechcraft Bonanza A36
+  Autor:    ZLEA
+  Licencia: CC BY-SA 4.0  <https://creativecommons.org/licenses/by-sa/4.0>
+  Original: https://commons.wikimedia.org/wiki/File:Beechcraft_A36_Bonanza_%28N36LH%2C_cn_E-614%29_%284-13-2024%29.jpg
+
+avion_bonanzav.jpg  /  avion_bonanzav_mini.jpg
+  Beechcraft Bonanza V35
+  Autor:    wiltshirespotter
+  Licencia: CC BY-SA 2.0  <https://creativecommons.org/licenses/by-sa/2.0>
+  Original: https://commons.wikimedia.org/wiki/File:V-Tail_%2819449886138%29.jpg
+
+avion_kingair.jpg  /  avion_kingair_mini.jpg
+  Beechcraft King Air
+  Autor:    Gordon Leggett
+  Licencia: CC BY-SA 4.0  <https://creativecommons.org/licenses/by-sa/4.0>
+  Original: https://commons.wikimedia.org/wiki/File:2017-09-20_Norlandair_Super_King_Air_B200_%28TF-NLB%29%2C_at_Nuuk_Airport.jpg
+
+avion_musketeer.jpg  /  avion_musketeer_mini.jpg
+  Beechcraft Musketeer / Sundowner
+  Autor:    Alan Wilson
+  Licencia: CC BY-SA 2.0  <https://creativecommons.org/licenses/by-sa/2.0>
+  Original: https://commons.wikimedia.org/wiki/File:Beech_A23-24_Musketeer_EI-BFF_%286935542098%29.jpg
+
+avion_t34.jpg  /  avion_t34_mini.jpg
+  Beechcraft T-34 Mentor
+  Autor:    PHCS R. L. LAWSON
+  Licencia: Dominio público  <https://commons.wikimedia.org/wiki/Commons:Licensing#Public_domain>
+  Original: https://commons.wikimedia.org/wiki/File:T-34B-1.jpg
+
+avion_t6texan2.jpg  /  avion_t6texan2_mini.jpg
+  Beechcraft T-6 Texan II
+  Autor:    Novadogg
+  Licencia: CC BY-SA 4.0  <https://creativecommons.org/licenses/by-sa/4.0>
+  Original: https://commons.wikimedia.org/wiki/File:455FTS_T-6A_Texan_II.jpg
+
+avion_b737.jpg  /  avion_b737_mini.jpg
+  Boeing 737
+  Autor:    Lord of the Wings© from Toronto, Canada
+  Licencia: CC BY-SA 2.0  <https://creativecommons.org/licenses/by-sa/2.0>
+  Original: https://commons.wikimedia.org/wiki/File:ASJ_Sunwing_Airlines_-_Boeing_737-8HX_-_C-FLSW_-_Flight_SWG610_to_VRA_%289363270110%29.jpg
+
+avion_b787.jpg  /  avion_b787_mini.jpg
+  Boeing 787 Dreamliner
+  Autor:    Lord of the Wings© from Toronto, Canada
+  Licencia: CC BY-SA 2.0  <https://creativecommons.org/licenses/by-sa/2.0>
+  Original: https://commons.wikimedia.org/wiki/File:ASJ_Ethiopian_Airlines_-_Boeing_787-8_Dreamliner_-_ET-AOR_-_Flight_ETH503_to_FCO_%289572215820%29.jpg
+
+avion_bristell.jpg  /  avion_bristell_mini.jpg
+  Bristell B23
+  Autor:    Bidgee
+  Licencia: CC BY-SA 3.0 au  <https://creativecommons.org/licenses/by-sa/3.0/au/deed.en>
+  Original: https://commons.wikimedia.org/wiki/File:Soar_Aviation_%28VH-YVX%29_BRM_Aero_Bristell_NG_5_LSA_taxiing_at_Wagga_Wagga_Airport.jpg
+
+avion_c150.jpg  /  avion_c150_mini.jpg
+  Cessna 150
+  Autor:    Frank Schwichtenberg
+  Licencia: CC BY-SA 3.0  <https://creativecommons.org/licenses/by-sa/3.0>
+  Original: https://commons.wikimedia.org/wiki/File:Cessna_150_%28D-ETKR%29_04.jpg
+
+avion_c152.jpg  /  avion_c152_mini.jpg
+  Cessna 152
+  Autor:    Alec Wilson
+  Licencia: CC BY-SA 2.0  <https://creativecommons.org/licenses/by-sa/2.0>
+  Original: https://commons.wikimedia.org/wiki/File:G-WACG_%2828709174893%29.jpg
+
+avion_c172.jpg  /  avion_c172_mini.jpg
+  Cessna 172 Skyhawk
+  Autor:    Md Shaifuzzaman Ayon
+  Licencia: CC BY-SA 4.0  <https://creativecommons.org/licenses/by-sa/4.0>
+  Original: https://commons.wikimedia.org/wiki/File:Cessna_172_Skyhawk%2C_S2-AFH.jpg
+
+avion_c182.jpg  /  avion_c182_mini.jpg
+  Cessna 182 Skylane
+  Autor:    Aeroprints.com
+  Licencia: CC BY-SA 3.0  <https://creativecommons.org/licenses/by-sa/3.0>
+  Original: https://commons.wikimedia.org/wiki/File:TI-AWA_Cessna_Ce.182N_Skylane_%287462860582%29.jpg
+
+avion_c185.jpg  /  avion_c185_mini.jpg
+  Cessna 185 Skywagon
+  Autor:    James from Cheltenham, Gloucestershire
+  Licencia: CC BY-SA 2.0  <https://creativecommons.org/licenses/by-sa/2.0>
+  Original: https://commons.wikimedia.org/wiki/File:G-SAUO_Cessna_Skywagon_185_%2826264526593%29.jpg
+
+avion_c188.jpg  /  avion_c188_mini.jpg
+  Cessna 188 AgWagon
+  Autor:    wiltshirespotter
+  Licencia: CC BY-SA 2.0  <https://creativecommons.org/licenses/by-sa/2.0>
+  Original: https://commons.wikimedia.org/wiki/File:G-BFOY_%2816176463378%29.jpg
+
+avion_c206.jpg  /  avion_c206_mini.jpg
+  Cessna 206 Stationair
+  Autor:    Mike Burdett from CROMER, UK
+  Licencia: CC BY-SA 2.0  <https://creativecommons.org/licenses/by-sa/2.0>
+  Original: https://commons.wikimedia.org/wiki/File:PH-AMC_Cessna_T206H_Turbo_Stationair_%2836792998150%29.jpg
+
+avion_c208.jpg  /  avion_c208_mini.jpg
+  Cessna 208 Caravan
+  Autor:    Robbie Klinkenberg
+  Licencia: CC BY 4.0  <https://creativecommons.org/licenses/by/4.0>
+  Original: https://commons.wikimedia.org/wiki/File:Fallschirmsportzentrum_Saar_Cessna_208_Caravan_D-FNDA_at_Portim%C3%A3o_Airport_12-06-2023_%281%29.jpg
+
+avion_c210.jpg  /  avion_c210_mini.jpg
+  Cessna 210 Centurion
+  Autor:    Aeroprints.com
+  Licencia: CC BY-SA 3.0  <https://creativecommons.org/licenses/by-sa/3.0>
+  Original: https://commons.wikimedia.org/wiki/File:TG-VTO_Cessna_Ce.210_Turbo_Centurion_%287468987586%29.jpg
+
+avion_c310.jpg  /  avion_c310_mini.jpg
+  Cessna 310
+  Autor:    Aeroprints.com
+  Licencia: CC BY-SA 3.0  <https://creativecommons.org/licenses/by-sa/3.0>
+  Original: https://commons.wikimedia.org/wiki/File:CC-PMM_Cessna_310_%288185260161%29.jpg
+
+avion_skymaster.jpg  /  avion_skymaster_mini.jpg
+  Cessna 337 Skymaster
+  Autor:    Pedro Aragão
+  Licencia: CC BY-SA 3.0  <https://creativecommons.org/licenses/by-sa/3.0>
+  Original: https://commons.wikimedia.org/wiki/File:Cessna_337_Super_Skymaster_AN0745424.jpg
+
+avion_sr22.jpg  /  avion_sr22_mini.jpg
+  Cirrus SR22
+  Autor:    James from Cheltenham, Gloucestershire
+  Licencia: CC BY-SA 2.0  <https://creativecommons.org/licenses/by-sa/2.0>
+  Original: https://commons.wikimedia.org/wiki/File:G-KOCO_Cirrus_SR22_%2823748765791%29.jpg
+
+avion_da40.jpg  /  avion_da40_mini.jpg
+  Diamond DA40
+  Autor:    Cjp24
+  Licencia: CC BY-SA 4.0  <https://creativecommons.org/licenses/by-sa/4.0>
+  Original: https://commons.wikimedia.org/wiki/File:Diamond_DA40_HB-SDC.jpg
+
+avion_e190.jpg  /  avion_e190_mini.jpg
+  Embraer E190
+  Autor:    Valentin Hintikka from Finland
+  Licencia: CC BY 2.0  <https://creativecommons.org/licenses/by/2.0>
+  Original: https://commons.wikimedia.org/wiki/File:Wider%C3%B8e%2C_LN-WEA%2C_Embraer_E190-E2_%40_HEL.jpg
+
+avion_e195e2.jpg  /  avion_e195e2_mini.jpg
+  Embraer E195-E2
+  Autor:    New York-air
+  Licencia: CC BY-SA 4.0  <https://creativecommons.org/licenses/by-sa/4.0>
+  Original: https://commons.wikimedia.org/wiki/File:Embraer_E195-E2_PR-ZIQ.jpg
+
+avion_tucano.jpg  /  avion_tucano_mini.jpg
+  Embraer EMB-312 Tucano
+  Autor:    Guillaume Paumier (user:guillom)
+  Licencia: CC BY 2.5  <https://creativecommons.org/licenses/by/2.5>
+  Original: https://commons.wikimedia.org/wiki/File:Embraer_EMB_312_Tucano_-_AirExpo_Muret_2007_0141_2007-05-12.jpg
+
+avion_ranquel.jpg  /  avion_ranquel_mini.jpg
+  FMA IA-46 Ranquel
+  Autor:    Dirección de Estudios Históricos de la Fuerza Aérea Argentina
+  Licencia: Dominio público  <https://commons.wikimedia.org/wiki/Commons:Licensing#Public_domain>
+  Original: https://commons.wikimedia.org/wiki/File:MS760_FMA.jpg
+
+avion_guarani.jpg  /  avion_guarani_mini.jpg
+  FMA IA-50 Guaraní II
+  Autor:    Rob Schleiffert
+  Licencia: CC BY-SA 2.0  <https://creativecommons.org/licenses/by-sa/2.0>
+  Original: https://commons.wikimedia.org/wiki/File:FMA_IA-50B_Guarani_II.jpg
+
+avion_ia58.jpg  /  avion_ia58_mini.jpg
+  FMA IA-58 Pucará
+  Autor:    André Gerwing
+  Licencia: CC BY-SA 4.0  <https://creativecommons.org/licenses/by-sa/4.0>
+  Original: https://commons.wikimedia.org/wiki/File:FMA_IA_58_Pucara_%28cn_18%2C_A-515%29_1990-05-01_Andre_Gerwing_Collection_ID_017897.jpg
+
+avion_ia63.jpg  /  avion_ia63_mini.jpg
+  FMA IA-63 Pampa
+  Autor:    JO2 Pete Hatzakos · US Navy
+  Licencia: Dominio público  <https://commons.wikimedia.org/wiki/Template:PD-USGov-Military-Navy>
+  Original: https://commons.wikimedia.org/wiki/File:FMA_IA_63_Pampa_1991.jpg
+
+avion_grob115.jpg  /  avion_grob115_mini.jpg
+  Grob G115
+  Autor:    RHL Images from England
+  Licencia: CC BY-SA 2.0  <https://creativecommons.org/licenses/by-sa/2.0>
+  Original: https://commons.wikimedia.org/wiki/File:Grob_G115_G-BOPU_%288627126543%29.jpg
+
+avion_aa5.jpg  /  avion_aa5_mini.jpg
+  Grumman AA-5 Tiger
+  Autor:    Huhu Uet
+  Licencia: CC BY 3.0  <https://creativecommons.org/licenses/by/3.0>
+  Original: https://commons.wikimedia.org/wiki/File:Grumman_AA-5B_Tiger_%28D-ENFL%29_02.jpg
+
+avion_agcat.jpg  /  avion_agcat_mini.jpg
+  Grumman Ag-Cat
+  Autor:    Lukas skywalker
+  Licencia: CC BY 3.0  <https://creativecommons.org/licenses/by/3.0>
+  Original: https://commons.wikimedia.org/wiki/File:Grumman_G-164A_Ag-Cat_Air_Show_G%C3%B3raszka_2007.jpg
+
+avion_c130.jpg  /  avion_c130_mini.jpg
+  Lockheed C-130 Hércules
+  Autor:    U.S. Air Force photo by Tech. Sgt. Howard Blair
+  Licencia: Dominio público  <https://commons.wikimedia.org/wiki/Commons:Licensing#Public_domain>
+  Original: https://commons.wikimedia.org/wiki/File:Lockheed_C-130_Hercules.jpg
+
+avion_maule.jpg  /  avion_maule_mini.jpg
+  Maule M-7
+  Autor:    Ahunt
+  Licencia: Dominio público  <https://commons.wikimedia.org/wiki/Commons:Licensing#Public_domain>
+  Original: https://commons.wikimedia.org/wiki/File:Maule_M-7-235C_Orion_C-FSRA_04.JPG
+
+avion_mooney.jpg  /  avion_mooney_mini.jpg
+  Mooney M20
+  Autor:    Bene Riobó
+  Licencia: CC BY-SA 4.0  <https://creativecommons.org/licenses/by-sa/4.0>
+  Original: https://commons.wikimedia.org/wiki/File:SE-LBM_Mooney_M20_VBY.jpg
+
+avion_dromader.jpg  /  avion_dromader_mini.jpg
+  PZL M18 Dromader
+  Autor:    Tequask
+  Licencia: CC BY-SA 4.0  <https://creativecommons.org/licenses/by-sa/4.0>
+  Original: https://commons.wikimedia.org/wiki/File:N2177Q_-_PZL-Mielec_M-18A_Dromader-02.jpg
+
+avion_p68.jpg  /  avion_p68_mini.jpg
+  Partenavia P.68
+  Autor:    MercerMJ
+  Licencia: CC BY-SA 2.0  <https://creativecommons.org/licenses/by-sa/2.0>
+  Original: https://commons.wikimedia.org/wiki/File:Partenavia_P.68_TC_EC-ITV_%2827034454330%29.jpg
+
+avion_j3cub.jpg  /  avion_j3cub_mini.jpg
+  Piper J-3 Cub
+  Autor:    Alan Wilson from Stilton, Peterborough, Cambs, UK
+  Licencia: CC BY-SA 2.0  <https://creativecommons.org/licenses/by-sa/2.0>
+  Original: https://commons.wikimedia.org/wiki/File:Piper_J.3C-65_Cub_%E2%80%98G-BVAF%E2%80%99_%2832714647720%29.jpg
+
+avion_pa18.jpg  /  avion_pa18_mini.jpg
+  Piper PA-18 Super Cub
+  Autor:    Bob Adams from Amanzimtoti, South Africa
+  Licencia: CC BY-SA 2.0  <https://creativecommons.org/licenses/by-sa/2.0>
+  Original: https://commons.wikimedia.org/wiki/File:Piper_PA-18-150_Super_Cub_ZS-EEW_%2818169185121%29.jpg
+
+avion_aztec.jpg  /  avion_aztec_mini.jpg
+  Piper PA-23 Aztec
+  Autor:    Alpha320
+  Licencia: CC BY-SA 3.0  <https://creativecommons.org/licenses/by-sa/3.0>
+  Original: https://commons.wikimedia.org/wiki/File:HB-LDH_Piper_PA-23-250_Aztec_C_Berne_Airport_LSZB.jpg
+
+avion_comanche.jpg  /  avion_comanche_mini.jpg
+  Piper PA-24 Comanche
+  Autor:    James from Cheltenham, Gloucestershire
+  Licencia: CC BY-SA 2.0  <https://creativecommons.org/licenses/by-sa/2.0>
+  Original: https://commons.wikimedia.org/wiki/File:N250CC_Piper_Comanche_24-250_Aerodynamics_Worldwide_Inc_%2829350609000%29.jpg
+
+avion_pawnee.jpg  /  avion_pawnee_mini.jpg
+  Piper PA-25 Pawnee
+  Autor:    MartinLing at English Wikipedia
+  Licencia: CC BY-SA 3.0  <http://creativecommons.org/licenses/by-sa/3.0/>
+  Original: https://commons.wikimedia.org/wiki/File:Piper-Pawnee-G-BFRY.jpg
+
+avion_pa28.jpg  /  avion_pa28_mini.jpg
+  Piper PA-28 Cherokee
+  Autor:    Adrian Pingstone (Arpingstone)
+  Licencia: Dominio público  <https://commons.wikimedia.org/wiki/Commons:Licensing#Public_domain>
+  Original: https://commons.wikimedia.org/wiki/File:Piper_pa-28-140_cherokee_g-atoo_arp.jpg
+
+avion_arrow.jpg  /  avion_arrow_mini.jpg
+  Piper PA-28R Arrow
+  Autor:    Bidgee
+  Licencia: CC BY-SA 3.0 au  <https://creativecommons.org/licenses/by-sa/3.0/au/deed.en>
+  Original: https://commons.wikimedia.org/wiki/File:Piper_PA-28R-200_Arrow_II_%28VH-IGL%29_taxiing_at_Wagga_Wagga_Airport.jpg
+
+avion_navajo.jpg  /  avion_navajo_mini.jpg
+  Piper PA-31 Navajo
+  Autor:    Ank Kumar
+  Licencia: CC BY-SA 4.0  <https://creativecommons.org/licenses/by-sa/4.0>
+  Original: https://commons.wikimedia.org/wiki/File:VH-OCF_Piper_PA-31-350_Navajo_01.jpg
+
+avion_seneca.jpg  /  avion_seneca_mini.jpg
+  Piper PA-34 Seneca
+  Autor:    Bob Adams from Amanzimtoti, South Africa
+  Licencia: CC BY-SA 2.0  <https://creativecommons.org/licenses/by-sa/2.0>
+  Original: https://commons.wikimedia.org/wiki/File:Piper_PA-34-220T_Seneca_V_ZS-ONM_%2825673492064%29.jpg
+
+avion_pa38.jpg  /  avion_pa38_mini.jpg
+  Piper PA-38 Tomahawk
+  Autor:    111 Emergency from New Zealand
+  Licencia: CC BY 2.0  <https://creativecommons.org/licenses/by/2.0>
+  Original: https://commons.wikimedia.org/wiki/File:Piper_PA-38_Tomahawk_at_Wellington_Airport_%2833%29.jpg
+
+avion_pipistrel.jpg  /  avion_pipistrel_mini.jpg
+  Pipistrel Virus / Alpha
+  Autor:    CambridgeBayWeather
+  Licencia: CC BY-SA 4.0  <https://creativecommons.org/licenses/by-sa/4.0>
+  Original: https://commons.wikimedia.org/wiki/File:Yellowknife_Air_Show_Pipistrel_Virus_SW_C-FYEA_01.JPG
+
+avion_p2002.jpg  /  avion_p2002_mini.jpg
+  Tecnam P2002 JF
+  Autor:    Alf van Beem
+  Licencia: CC0  <http://creativecommons.org/publicdomain/zero/1.0/deed.en>
+  Original: https://commons.wikimedia.org/wiki/File:PH-VHA_Tecnam_P2002-JF_at_Hilversum_Airport_%28ICAO_EHHV%29%2C_photo-1.JPG
+
+avion_thrush.jpg  /  avion_thrush_mini.jpg
+  Thrush 510
+  Autor:    Bidgee
+  Licencia: CC BY-SA 3.0 au  <https://creativecommons.org/licenses/by-sa/3.0/au/>
+  Original: https://commons.wikimedia.org/wiki/File:Ayres_600-S2D_%28VH-LGZ%29_at_the_2013_Australian_International_Airshow.jpg
+
+avion_rv.jpg  /  avion_rv_mini.jpg
+  Van's RV (serie)
+  Autor:    Aeroprints.com
+  Licencia: CC BY-SA 3.0  <https://creativecommons.org/licenses/by-sa/3.0>
+  Original: https://commons.wikimedia.org/wiki/File:G-FIXX_Vans_RV-7_%289687325894%29.jpg
