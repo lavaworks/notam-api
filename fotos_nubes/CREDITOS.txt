@@ -1,0 +1,130 @@
+CREDITOS DE LAS FOTOS DE NUBES
+
+Todas provienen de Wikimedia Commons y se redistribuyen bajo la licencia que
+indica cada una. Las CC BY y CC BY-SA exigen atribucion: por eso este archivo,
+y por eso la app muestra autor, licencia y enlace al original al pie de cada
+ficha.
+
+Se aceptaron dominio publico, CC0, CC BY y CC BY-SA. NO se acepta GFDL a secas.
+
+------------------------------------------------------------------------
+
+nube_altocumulus.jpg  /  nube_altocumulus_mini.jpg
+  Altocumulus (Ac)
+  Autor:    The High Fin Sperm Whale
+  Licencia: CC BY-SA 3.0  <https://creativecommons.org/licenses/by-sa/3.0>
+  Original: https://commons.wikimedia.org/wiki/File:Altocumulus_mackerel_sky.jpg
+
+nube_accastellanus.jpg  /  nube_accastellanus_mini.jpg
+  Altocumulus castellanus (ACC)
+  Autor:    Famartin
+  Licencia: CC BY-SA 4.0  <https://creativecommons.org/licenses/by-sa/4.0>
+  Original: https://commons.wikimedia.org/wiki/File:2025-07-30_08_46_36_Altocumulus_clouds_viewed_from_Aquetong_Lane_in_the_Mountainview_section_of_Ewing_Township%2C_Mercer_County%2C_New_Jersey.jpg
+
+nube_altostratus.jpg  /  nube_altostratus_mini.jpg
+  Altostratus (As)
+  Autor:    FotoSleuth
+  Licencia: CC BY 2.0  <https://creativecommons.org/licenses/by/2.0>
+  Original: https://commons.wikimedia.org/wiki/File:Cloudy_Sky_%2811204371415%29.jpg
+
+nube_arcus.jpg  /  nube_arcus_mini.jpg
+  Arcus · shelf y roll (ARC)
+  Autor:    Ayorinde Ogundele
+  Licencia: CC BY-SA 4.0  <https://creativecommons.org/licenses/by-sa/4.0>
+  Original: https://commons.wikimedia.org/wiki/File:Raincloud.jpg
+
+nube_capcloud.jpg  /  nube_capcloud_mini.jpg
+  Cap cloud (CAP)
+  Autor:    Aurélien Adoue from Mont-de-marsan, France
+  Licencia: CC BY 2.0  <https://creativecommons.org/licenses/by/2.0>
+  Original: https://commons.wikimedia.org/wiki/File:Cr%C3%A9ateur_de_nuages_%2840859679803%29.jpg
+
+nube_cirrocumulus.jpg  /  nube_cirrocumulus_mini.jpg
+  Cirrocumulus (Cc)
+  Autor:    Autor no indicado
+  Licencia: CC BY-SA 3.0  <http://creativecommons.org/licenses/by-sa/3.0/>
+  Original: https://commons.wikimedia.org/wiki/File:Cirrocumulus_lacunosus_behind_Stratocumulus.jpg
+
+nube_cirrostratus.jpg  /  nube_cirrostratus_mini.jpg
+  Cirrostratus (Cs)
+  Autor:    The High Fin Sperm Whale
+  Licencia: CC BY-SA 3.0  <https://creativecommons.org/licenses/by-sa/3.0>
+  Original: https://commons.wikimedia.org/wiki/File:Cirrostratus-Langley.jpg
+
+nube_cirrus.jpg  /  nube_cirrus_mini.jpg
+  Cirrus (Ci)
+  Autor:    Fontema
+  Licencia: CC BY-SA 4.0  <https://creativecommons.org/licenses/by-sa/4.0>
+  Original: https://commons.wikimedia.org/wiki/File:20141118_abies.jpg
+
+nube_cb.jpg  /  nube_cb_mini.jpg
+  Cumulonimbus (Cb)
+  Autor:    cogdogblog
+  Licencia: CC BY 2.0  <https://creativecommons.org/licenses/by/2.0>
+  Original: https://commons.wikimedia.org/wiki/File:Baby_Thunderhead_%2815055509631%29.jpg
+
+nube_cumulus.jpg  /  nube_cumulus_mini.jpg
+  Cumulus (Cu)
+  Autor:    Rasbak
+  Licencia: CC BY-SA 3.0  <http://creativecommons.org/licenses/by-sa/3.0/>
+  Original: https://commons.wikimedia.org/wiki/File:Cumulus_humilis.jpg
+
+nube_fractus.jpg  /  nube_fractus_mini.jpg
+  Fractus · el scud (Fra)
+  Autor:    Famartin
+  Licencia: CC BY-SA 4.0  <https://creativecommons.org/licenses/by-sa/4.0>
+  Original: https://commons.wikimedia.org/wiki/File:2023-09-09_15_41_46_Lumpy_cloud_base_behind_an_outflow_boundary_viewed_from_Aquetong_Lane_in_the_Mountainview_section_of_Ewing_Township%2C_Mercer_County%2C_New_Jersey.jpg
+
+nube_lenticular.jpg  /  nube_lenticular_mini.jpg
+  Lenticular (Ac len)
+  Autor:    Ryan Hodnett
+  Licencia: CC BY-SA 4.0  <https://creativecommons.org/licenses/by-sa/4.0>
+  Original: https://commons.wikimedia.org/wiki/File:Clouds_-_Gros_Morne_National_Park%2C_Newfoundland_2019-08-17_%2801%29.jpg
+
+nube_mammatus.jpg  /  nube_mammatus_mini.jpg
+  Mammatus (MAM)
+  Autor:    Acroterion
+  Licencia: CC BY-SA 4.0  <https://creativecommons.org/licenses/by-sa/4.0>
+  Original: https://commons.wikimedia.org/wiki/File:Mammatus_clouds_Montana_MT1.jpg
+
+nube_nimbostratus.jpg  /  nube_nimbostratus_mini.jpg
+  Nimbostratus (Ns)
+  Autor:    Famartin
+  Licencia: CC BY-SA 4.0  <https://creativecommons.org/licenses/by-sa/4.0>
+  Original: https://commons.wikimedia.org/wiki/File:2023-10-29_12_12_13_View_towards_dark_clouds_from_Burlington_County_Route_630_%28Woodlane_Road%29_in_Westampton_Township%2C_Burlington_County%2C_New_Jersey.jpg
+
+nube_rotor.jpg  /  nube_rotor_mini.jpg
+  Nube rotor (ROTOR)
+  Autor:    Jeremy Zawodny
+  Licencia: CC BY-SA 2.0  <https://creativecommons.org/licenses/by-sa/2.0>
+  Original: https://commons.wikimedia.org/wiki/File:Rotor_Cloud_over_Carson_Valley.jpg
+
+nube_stratocumulus.jpg  /  nube_stratocumulus_mini.jpg
+  Stratocumulus (Sc)
+  Autor:    Thomas Bresson
+  Licencia: CC BY 4.0  <https://creativecommons.org/licenses/by/4.0>
+  Original: https://commons.wikimedia.org/wiki/File:2020-06-20_14-02-15_nuages.jpg
+
+nube_stratus.jpg  /  nube_stratus_mini.jpg
+  Stratus (St)
+  Autor:    Famartin
+  Licencia: CC BY-SA 4.0  <https://creativecommons.org/licenses/by-sa/4.0>
+  Original: https://commons.wikimedia.org/wiki/File:2019-11-30_12_58_05_Stratus_clouds_over_a_field_along_Old_Ox_Road_in_the_Dulles_section_of_Sterling%2C_Loudoun_County%2C_Virginia.jpg
+
+nube_tcu.jpg  /  nube_tcu_mini.jpg
+  Towering cumulus (TCU)
+  Autor:    User:JarrahTree
+  Licencia: CC BY 2.5 au  <https://creativecommons.org/licenses/by/2.5/au/deed.en>
+  Original: https://commons.wikimedia.org/wiki/File:Cumulus_congestus_Perth_2009.jpg
+
+nube_virga.jpg  /  nube_virga_mini.jpg
+  Virga (VIRGA)
+  Autor:    GerritR
+  Licencia: CC BY-SA 4.0  <https://creativecommons.org/licenses/by-sa/4.0>
+  Original: https://commons.wikimedia.org/wiki/File:Virga_an_Altocumulus_stratiformis_verst%C3%A4rken_den_Eigenschatten.jpg
+
+nube_cbincus.jpg  /  nube_cbincus_mini.jpg
+  Yunque · Cb incus (Inc)
+  Autor:    Shellparakeet
+  Licencia: CC0  <http://creativecommons.org/publicdomain/zero/1.0/deed.en>
+  Original: https://commons.wikimedia.org/wiki/File:08-30-2020_Cumululonimbus_cloud.jpg
