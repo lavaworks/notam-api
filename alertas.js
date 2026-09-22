@@ -114,21 +114,64 @@ export async function guardarSuscripcion({ token, aerodromos, reglas, plataforma
   if (!pool) throw new Error("sin base");
   const r = reglas || {};
   const plat = plataforma === "android" ? "android" : "ios";
+  const lista = (aerodromos || []).filter(a => a && a.icao && a.indicador);
+  const icaos = lista.map(a => a.icao.toUpperCase());
+
   const cliente = await pool.connect();
   try {
     await cliente.query("BEGIN");
-    // Se reemplaza la suscripción completa del dispositivo: la app manda
-    // siempre su lista entera, así que lo que no viene es porque se dio
-    // de baja.
-    await cliente.query("DELETE FROM suscripciones WHERE token = $1", [token]);
-    for (const a of aerodromos || []) {
-      if (!a.icao || !a.indicador) continue;
+
+    // ── BAJA: sólo lo que el dispositivo dejó de vigilar ──
+    //
+    // ACÁ ESTABA EL BUG DEL REPORTE REPETIDO (2026-09-22).
+    //
+    // Antes esto era `DELETE FROM suscripciones WHERE token = $1` seguido de
+    // un INSERT de toda la lista. Como el INSERT no escribe `ultimo_briefing`
+    // ni `ultimo_push`, cada vez que la app registraba su lista —que es cada
+    // vez que se abre— esos dos sellos volvían a NULL.
+    //
+    // La secuencia que lo destapó: a las 6:00 sale el reporte matutino y se
+    // marca la fecha. El piloto agarra el teléfono y abre la app. La app
+    // manda su lista, el DELETE+INSERT borra la marca, y la pasada siguiente
+    // del scraper —6:51, todavía dentro de la ventana de 6 a 7— lo ve como
+    // pendiente y manda OTRO. Cuanto más temprano abría la app, más reportes
+    // recibía.
+    //
+    // El mismo borrado rompía el techo de un push cada 30 minutos: abrir la
+    // app reseteaba `ultimo_push` y la alerta siguiente salía sin esperar.
+    //
+    // Ahora se borra sólo lo que ya no está en la lista y el resto se
+    // actualiza en el lugar, sin tocar los sellos. Con la lista vacía borra
+    // todo, que es lo correcto: el piloto apagó la campanita en todos lados.
+    await cliente.query(
+      `DELETE FROM suscripciones
+        WHERE token = $1 AND NOT (icao = ANY($2::text[]))`,
+      [token, icaos]);
+
+    for (const a of lista) {
       await cliente.query(
         `INSERT INTO suscripciones
            (token, icao, indicador, vence, viento_kt, rafaga_kt,
             visibilidad_m, techo_ft, tormenta, mejoras, lat, lon, fir,
             estacion, nombre, plataforma, alertas, briefing)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+         ON CONFLICT (token, icao) DO UPDATE SET
+            indicador     = EXCLUDED.indicador,
+            vence         = EXCLUDED.vence,
+            viento_kt     = EXCLUDED.viento_kt,
+            rafaga_kt     = EXCLUDED.rafaga_kt,
+            visibilidad_m = EXCLUDED.visibilidad_m,
+            techo_ft      = EXCLUDED.techo_ft,
+            tormenta      = EXCLUDED.tormenta,
+            mejoras       = EXCLUDED.mejoras,
+            lat           = EXCLUDED.lat,
+            lon           = EXCLUDED.lon,
+            fir           = EXCLUDED.fir,
+            estacion      = EXCLUDED.estacion,
+            nombre        = EXCLUDED.nombre,
+            plataforma    = EXCLUDED.plataforma,
+            alertas       = EXCLUDED.alertas,
+            briefing      = EXCLUDED.briefing`,
         [token, a.icao.toUpperCase(), a.indicador.toUpperCase(), a.vence,
          r.vientoKt ?? 20, r.rafagaKt ?? 25, r.visibilidadM ?? 5000,
          r.techoFt ?? 1500, r.tormenta ?? true, r.mejoras ?? true,
