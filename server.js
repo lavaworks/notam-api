@@ -49,6 +49,9 @@ import * as cartas from "./cartas.js";
 // Lectura del libro de papel con Gemini. La API key vive acá y NUNCA en la
 // app: una key en el binario se extrae y la factura la paga Matías.
 import * as logbook from "./logbook.js";
+// Duelos de preguntas de Academia (2026-10-06): un piloto desafía a otro
+// con un link. Independiente del resto; sin base, en memoria.
+import * as duelos from "./duelos.js";
 
 const app = express();
 // 64 kb para toda la API: los cuerpos son JSON chicos y un límite bajo es la
@@ -799,6 +802,7 @@ app.get("/health", async (req, res) => {
     con_error: [...scrapeErrors.keys()],
     cartas: cartas.estado(),
     logbook: logbook.estado(),
+    duelos: duelos.estado(),
     vigilancia: {
       base: alertas.activo(),
       apns: alertas.apnsConfigurado(),
@@ -810,6 +814,7 @@ app.get("/health", async (req, res) => {
 
 cartas.montar(app);
 logbook.montar(app);
+duelos.montar(app);
 
 app.get("/locations", (req, res) => {
   res.json({
@@ -961,6 +966,7 @@ app.listen(PORT, async () => {
   // en el primer pedido.
   cartas.precalentar();
   await logbook.initDB();
+  await duelos.initDB();
   console.log(`Servidor corriendo en puerto ${PORT}`);
   try {
     await alertas.initDB();
