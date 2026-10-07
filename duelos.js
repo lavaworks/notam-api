@@ -1,9 +1,14 @@
 // duelos.js — Duelos de preguntas entre pilotos (Academia de Oscar).
 //
 // QUÉ ES (2026-10-06, idea de Matías tomada de Preguntados): un piloto
-// juega 10 preguntas y desafía a un amigo con un link. El amigo abre el link,
-// juega LAS MISMAS 10 preguntas en la app, y los dos ven quién acertó más
-// (a igualdad de aciertos, gana el más rápido).
+// desafía a un amigo con un link y los dos juegan LAS MISMAS 10 preguntas en
+// la app; gana el que acierta más (a igualdad, el más rápido).
+//
+// ORDEN (2026-10-07, Matías): PRIMERO se crea y se comparte el desafío y
+// DESPUÉS juega cada uno. Al revés —jugar y recién ahí compartir— nadie
+// mandaba un desafío en el que le había ido mal. Por eso el duelo nace sin
+// resultado del retador; él lo manda después con la `clave` que recibe al
+// crearlo (así nadie más puede cargar el resultado del retador).
 //
 // QUÉ GUARDA: sólo el código del duelo, los nombres que cada uno escribió,
 // los ids de las preguntas, aciertos y segundos. Nada de cuentas ni datos
@@ -49,14 +54,20 @@ async function asegurarPool() {
         codigo      TEXT PRIMARY KEY,
         preguntas   INTEGER[] NOT NULL,
         retador     TEXT NOT NULL,
-        r_aciertos  INTEGER NOT NULL,
-        r_segundos  REAL NOT NULL,
+        r_aciertos  INTEGER,
+        r_segundos  REAL,
+        r_clave     TEXT,
         rival       TEXT,
         v_aciertos  INTEGER,
         v_segundos  REAL,
         creado      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         respondido  TIMESTAMPTZ
       );`);
+    // La tabla ya existe en producción con el esquema del 2026-10-06 (el
+    // retador jugaba antes de crear): se relaja y se agrega la clave.
+    await candidato.query(`ALTER TABLE duelos ALTER COLUMN r_aciertos DROP NOT NULL;`);
+    await candidato.query(`ALTER TABLE duelos ALTER COLUMN r_segundos DROP NOT NULL;`);
+    await candidato.query(`ALTER TABLE duelos ADD COLUMN IF NOT EXISTS r_clave TEXT;`);
     pool = candidato;
     console.log("[duelos] guardados en Postgres");
     return pool;
@@ -111,7 +122,8 @@ function publico(d) {
   return {
     codigo: d.codigo,
     preguntas: d.preguntas,
-    retador: { nombre: d.retador, aciertos: d.r_aciertos, segundos: d.r_segundos },
+    // aciertos/segundos en null = el retador todavía no jugó.
+    retador: { nombre: d.retador, aciertos: d.r_aciertos ?? null, segundos: d.r_segundos ?? null },
     rival: d.rival == null ? null
       : { nombre: d.rival, aciertos: d.v_aciertos, segundos: d.v_segundos },
     creado: new Date(d.creado).toISOString(),
@@ -147,7 +159,7 @@ function escapar(s) {
 function pagina(d, appStore) {
   const titulo = d ? `${escapar(d.retador)} te desafió en Oscar` : "Duelo de Oscar";
   const detalle = d
-    ? `Acertó ${d.r_aciertos} de ${PREGUNTAS}. ¿Le ganás? Respondé las mismas preguntas.`
+    ? `${PREGUNTAS} preguntas de aviación, las mismas para los dos. ¿Quién acierta más?`
     : "Este duelo no existe o ya venció.";
   const codigo = d ? escapar(d.codigo) : "";
   return `<!doctype html><html lang="es"><head><meta charset="utf-8">
@@ -186,27 +198,33 @@ export function montar(app) {
       const b = req.body || {};
       const preguntas = Array.isArray(b.preguntas)
         ? b.preguntas.map((x) => entero(x, 1, 1_000_000)).filter((x) => x != null) : [];
-      const aciertos = entero(b.aciertos, 0, PREGUNTAS);
-      const segs = segundos(b.segundos);
+      // El resultado del retador es opcional: la app nueva crea sin jugar
+      // (y lo manda después a /retador); la del 2026-10-06 lo manda acá.
+      const conResultado = b.aciertos != null;
+      const aciertos = conResultado ? entero(b.aciertos, 0, PREGUNTAS) : null;
+      const segs = conResultado ? segundos(b.segundos) : null;
       if (preguntas.length !== PREGUNTAS || new Set(preguntas).size !== PREGUNTAS
-          || aciertos == null || segs == null) {
+          || (conResultado && (aciertos == null || segs == null))) {
         return res.status(400).json({ error: "Duelo inválido" });
       }
+      const clave = crypto.randomBytes(12).toString("hex");
       const d = {
         codigo: nuevoCodigo(), preguntas, retador: limpiarNombre(b.nombre),
-        r_aciertos: aciertos, r_segundos: segs, rival: null,
+        r_aciertos: aciertos, r_segundos: segs, r_clave: clave, rival: null,
         v_aciertos: null, v_segundos: null, creado: new Date()
       };
       const db = await asegurarPool();
       if (db) {
         await db.query(
-          `INSERT INTO duelos (codigo, preguntas, retador, r_aciertos, r_segundos)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [d.codigo, d.preguntas, d.retador, d.r_aciertos, d.r_segundos]);
+          `INSERT INTO duelos (codigo, preguntas, retador, r_aciertos, r_segundos, r_clave)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [d.codigo, d.preguntas, d.retador, d.r_aciertos, d.r_segundos, clave]);
       } else {
         memoria.set(d.codigo, d);
       }
-      res.json({ ...publico(d), link: `https://notam-api.onrender.com/duelo/${d.codigo}` });
+      // La clave va SÓLO en esta respuesta: es lo que le permite al retador
+      // cargar su resultado después.
+      res.json({ ...publico(d), clave, link: `https://notam-api.onrender.com/duelo/${d.codigo}` });
     } catch (e) {
       console.error("[duelos] crear:", e.message);
       res.status(500).json({ error: "No se pudo crear el duelo" });
@@ -222,6 +240,43 @@ export function montar(app) {
     } catch (e) {
       console.error("[duelos] ver:", e.message);
       res.status(500).json({ error: "No se pudo leer el duelo" });
+    }
+  });
+
+  // El retador manda su resultado (después de compartir). Una sola vez.
+  app.post("/duelos/:codigo/retador", async (req, res) => {
+    try {
+      const codigo = String(req.params.codigo).toUpperCase();
+      const b = req.body || {};
+      const aciertos = entero(b.aciertos, 0, PREGUNTAS);
+      const segs = segundos(b.segundos);
+      const clave = String(b.clave || "");
+      if (aciertos == null || segs == null || !clave) return res.status(400).json({ error: "Resultado inválido" });
+      const db = await asegurarPool();
+      let d;
+      if (db) {
+        const r = await db.query(
+          `UPDATE duelos SET r_aciertos = $3, r_segundos = $4
+           WHERE codigo = $1 AND r_clave = $2 AND r_aciertos IS NULL
+           RETURNING *`, [codigo, clave, aciertos, segs]);
+        d = r.rows[0];
+        if (!d) {
+          const existe = await buscar(codigo);
+          if (!existe) return res.status(404).json({ error: "No existe ese duelo" });
+          if (existe.r_clave !== clave) return res.status(403).json({ error: "Este duelo no es tuyo" });
+          return res.status(409).json({ error: "Ya jugaste este duelo", duelo: publico(existe) });
+        }
+      } else {
+        d = memoria.get(codigo);
+        if (!d) return res.status(404).json({ error: "No existe ese duelo" });
+        if (d.r_clave !== clave) return res.status(403).json({ error: "Este duelo no es tuyo" });
+        if (d.r_aciertos != null) return res.status(409).json({ error: "Ya jugaste este duelo", duelo: publico(d) });
+        Object.assign(d, { r_aciertos: aciertos, r_segundos: segs });
+      }
+      res.json(publico(d));
+    } catch (e) {
+      console.error("[duelos] retador:", e.message);
+      res.status(500).json({ error: "No se pudo guardar el resultado" });
     }
   });
 
