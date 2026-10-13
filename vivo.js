@@ -243,7 +243,7 @@ const icono = L.divIcon({ className: "", iconSize: [30, 30], iconAnchor: [15, 15
   html: '<svg class="avion" id="av" viewBox="0 0 24 24"><path fill="#FFD60A" stroke="#000" stroke-width=".8" d="M12 2c.8 0 1.3.8 1.3 1.8V9l7.7 4.6v1.9l-7.7-2.3v4.6l2.2 1.6V21L12 20.1 8.5 21v-1.6l2.2-1.6v-4.6L3 15.5v-1.9L10.7 9V3.8C10.7 2.8 11.2 2 12 2z"/></svg>' });
 let marca = null, ultimo = 0, encuadrado = false, info = null, ultPunto = null;
 let destino = null;
-function fmtHora(d){ return d.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"}); }
+function fmtHora(d){ return d.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit",hourCycle:"h23"}); }
 function nm(a,b){ const R=3440.065, r=Math.PI/180;
   const dLat=(b[0]-a[0])*r, dLon=(b[1]-a[1])*r;
   const x=Math.sin(dLat/2)**2+Math.cos(a[0]*r)*Math.cos(b[0]*r)*Math.sin(dLon/2)**2;
