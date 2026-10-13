@@ -72,6 +72,9 @@ async function asegurarPool() {
       );`);
     await candidato.query(
       `CREATE INDEX IF NOT EXISTS vivo_puntos_codigo_t ON vivo_puntos (codigo, t);`);
+    // Coordenadas del origen para marcar la salida (2026-10-12).
+    await candidato.query(`ALTER TABLE vivos ADD COLUMN IF NOT EXISTS orig_lat DOUBLE PRECISION;`);
+    await candidato.query(`ALTER TABLE vivos ADD COLUMN IF NOT EXISTS orig_lon DOUBLE PRECISION;`);
     pool = candidato;
     console.log("[vivo] guardados en Postgres");
     return pool;
@@ -160,6 +163,7 @@ function publico(v) {
     codigo: v.codigo,
     matricula: v.matricula, origen: v.origen, destino: v.destino,
     destino_lat: v.dest_lat, destino_lon: v.dest_lon,
+    origen_lat: v.orig_lat ?? null, origen_lon: v.orig_lon ?? null,
     creado: new Date(v.creado).toISOString(),
     actualizado: new Date(v.actualizado).toISOString(),
     terminado: v.terminado ? new Date(v.terminado).toISOString() : null,
@@ -218,6 +222,9 @@ border-radius:16px;padding:12px 14px;box-shadow:0 4px 16px rgba(0,0,0,.35)}
 .pie a{color:#9AA5B4}
 .aviso{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:30px}
 .avion{width:30px;height:30px;transform-origin:50% 50%}
+.etq{background:#0B1420;color:#F2F4F7;border:none;border-radius:6px;font:800 12px ui-monospace,monospace;
+padding:2px 6px;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.etq::before{display:none}
 </style></head><body>
 ${v ? `<div id="mapa"></div>
 <div class="tarjeta" id="arriba"><div class="fila">
@@ -243,6 +250,35 @@ const icono = L.divIcon({ className: "", iconSize: [30, 30], iconAnchor: [15, 15
   html: '<svg class="avion" id="av" viewBox="0 0 24 24"><path fill="#FFD60A" stroke="#000" stroke-width=".8" d="M12 2c.8 0 1.3.8 1.3 1.8V9l7.7 4.6v1.9l-7.7-2.3v4.6l2.2 1.6V21L12 20.1 8.5 21v-1.6l2.2-1.6v-4.6L3 15.5v-1.9L10.7 9V3.8C10.7 2.8 11.2 2 12 2z"/></svg>' });
 let marca = null, ultimo = 0, encuadrado = false, info = null, ultPunto = null;
 let destino = null;
+// Salida (verde) y llegada (roja), y lo que falta hasta el destino punteado
+// (Matías, 2026-10-12: «para que quede más completo»).
+let marcaSalida = null, marcaLlegada = null;
+const falta = L.polyline([], { color: "#9AA5B4", weight: 2, dashArray: "6 8" }).addTo(mapa);
+function punto(ll, color, texto) {
+  const m = L.circleMarker(ll, { radius: 8, color: "#fff", weight: 2, fillColor: color, fillOpacity: 1 }).addTo(mapa);
+  if (texto) m.bindTooltip(texto, { permanent: true, direction: "top", offset: [0, -8], className: "etq" });
+  return m;
+}
+function marcarExtremos() {
+  if (!marcaSalida) {
+    let ll = null;
+    if (info.origen_lat != null && info.origen_lon != null) ll = [info.origen_lat, info.origen_lon];
+    else if (traza.getLatLngs().length) ll = traza.getLatLngs()[0];
+    if (ll) marcaSalida = punto(ll, "#34C759", info.origen);
+  }
+  if (!marcaLlegada && destino) marcaLlegada = punto(destino, "#FF3B30", info.destino);
+  else if (marcaLlegada && destino) marcaLlegada.setLatLng(destino);
+  falta.setLatLngs(destino && ultPunto && !info.terminado ? [[ultPunto.lat, ultPunto.lon], destino] : []);
+}
+function encuadre() {
+  const b = traza.getLatLngs().length ? traza.getBounds() : null;
+  const extras = [marcaSalida, marcaLlegada].filter(Boolean).map((m) => m.getLatLng());
+  if (!b && !extras.length) return false;
+  const todo = b ? L.latLngBounds(b.getSouthWest(), b.getNorthEast()) : L.latLngBounds(extras[0], extras[0]);
+  extras.forEach((e) => todo.extend(e));
+  mapa.fitBounds(todo, { padding: [60, 140], maxZoom: 12 });
+  return true;
+}
 function fmtHora(d){ return d.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit",hourCycle:"h23"}); }
 function nm(a,b){ const R=3440.065, r=Math.PI/180;
   const dLat=(b[0]-a[0])*r, dLon=(b[1]-a[1])*r;
@@ -279,9 +315,9 @@ async function pedir(){
       if (!marca) marca = L.marker(ll, { icon: icono }).addTo(mapa); else marca.setLatLng(ll);
       const av = document.getElementById("av");
       if (av && ultPunto.trk != null) av.style.transform = "rotate(" + ultPunto.trk + "deg)";
-      if (!encuadrado && traza.getLatLngs().length > 1) { mapa.fitBounds(traza.getBounds(), { padding: [60, 140] }); encuadrado = true; }
-      else if (!encuadrado) { mapa.setView(ll, 11); encuadrado = true; }
     }
+    marcarExtremos();
+    if (!encuadrado) encuadrado = encuadre();
     pintar();
     if (info.vencido) return;
   } catch (e) {}
@@ -309,14 +345,16 @@ export function montar(app) {
         destino: texto(b.destino, 12),
         dest_lat: numero(b.destino_lat, -90, 90),
         dest_lon: numero(b.destino_lon, -180, 180),
+        orig_lat: numero(b.origen_lat, -90, 90),
+        orig_lon: numero(b.origen_lon, -180, 180),
         creado: new Date(), actualizado: new Date(), terminado: null, puntos: 0
       };
       const db = await asegurarPool();
       if (db) {
         await db.query(
-          `INSERT INTO vivos (codigo, clave, matricula, origen, destino, dest_lat, dest_lon)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [v.codigo, v.clave, v.matricula, v.origen, v.destino, v.dest_lat, v.dest_lon]);
+          `INSERT INTO vivos (codigo, clave, matricula, origen, destino, dest_lat, dest_lon, orig_lat, orig_lon)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [v.codigo, v.clave, v.matricula, v.origen, v.destino, v.dest_lat, v.dest_lon, v.orig_lat, v.orig_lon]);
       } else {
         memoria.set(v.codigo, { vuelo: v, puntos: [] });
       }
