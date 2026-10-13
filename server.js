@@ -52,6 +52,8 @@ import * as logbook from "./logbook.js";
 // Duelos de preguntas de Academia (2026-10-06): un piloto desafía a otro
 // con un link. Independiente del resto; sin base, en memoria.
 import * as duelos from "./duelos.js";
+// Vuelo en vivo: link para seguir un vuelo en un mapa (2026-10-12).
+import * as vivo from "./vivo.js";
 
 const app = express();
 // 64 kb para toda la API: los cuerpos son JSON chicos y un límite bajo es la
@@ -803,6 +805,7 @@ app.get("/health", async (req, res) => {
     cartas: cartas.estado(),
     logbook: logbook.estado(),
     duelos: duelos.estado(),
+    vivo: vivo.estado(),
     vigilancia: {
       base: alertas.activo(),
       apns: alertas.apnsConfigurado(),
@@ -815,6 +818,7 @@ app.get("/health", async (req, res) => {
 cartas.montar(app);
 logbook.montar(app);
 duelos.montar(app);
+vivo.montar(app);
 
 app.get("/locations", (req, res) => {
   res.json({
@@ -967,6 +971,7 @@ app.listen(PORT, async () => {
   cartas.precalentar();
   await logbook.initDB();
   await duelos.initDB();
+  await vivo.initDB();
   console.log(`Servidor corriendo en puerto ${PORT}`);
   try {
     await alertas.initDB();
