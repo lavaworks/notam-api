@@ -54,6 +54,9 @@ import * as logbook from "./logbook.js";
 import * as duelos from "./duelos.js";
 // Vuelo en vivo: link para seguir un vuelo en un mapa (2026-10-12).
 import * as vivo from "./vivo.js";
+// Suplementos a la AIP vigentes por aeródromo (2026-10-16): pestaña
+// «Suplementos» de la hoja AIP. Sin base, como cartas.js.
+import * as suplementos from "./suplementos.js";
 
 const app = express();
 // 64 kb para toda la API: los cuerpos son JSON chicos y un límite bajo es la
@@ -803,6 +806,7 @@ app.get("/health", async (req, res) => {
     // Cuáles fallan, para no tener que adivinar desde afuera.
     con_error: [...scrapeErrors.keys()],
     cartas: cartas.estado(),
+    suplementos: suplementos.estado(),
     logbook: logbook.estado(),
     duelos: duelos.estado(),
     vivo: vivo.estado(),
@@ -816,6 +820,7 @@ app.get("/health", async (req, res) => {
 });
 
 cartas.montar(app);
+suplementos.montar(app);
 logbook.montar(app);
 duelos.montar(app);
 vivo.montar(app);
@@ -969,6 +974,7 @@ app.listen(PORT, async () => {
   // abra una ficha no espere los 6 MB. Si falla, no pasa nada: se reintenta
   // en el primer pedido.
   cartas.precalentar();
+  suplementos.precalentar();
   await logbook.initDB();
   await duelos.initDB();
   await vivo.initDB();
