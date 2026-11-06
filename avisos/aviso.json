@@ -1,6 +1,8 @@
 {
-  "id": "prueba-fiestas-2026-11-06",
-  "activo": true,
+  "id": "fiestas-2026",
+  "activo": false,
   "plataformas": ["ios", "android"],
-  "imagen": "fiestas_prueba.jpg"
+  "desde": "2026-12-20T00:00:00-03:00",
+  "hasta": "2027-01-07T00:00:00-03:00",
+  "imagen": "fiestas_2026.jpg"
 }
