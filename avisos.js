@@ -67,9 +67,9 @@ export function montar(app) {
     pedidos++;
     const plataforma = String(req.query.plataforma || "").toLowerCase();
     const a = await leer();
-    // Cinco minutos: alcanza para no pedirlo de más y para que un aviso
-    // apagado deje de salir rápido.
-    res.set("Cache-Control", "public, max-age=300");
+    // Sin caché (2026-11-06): con max-age=300 el iPhone se quedaba con la
+    // respuesta del aviso anterior y uno nuevo no aparecía. Es un JSON chico.
+    res.set("Cache-Control", "no-store");
     if (!vigente(a, plataforma)) return res.json({ aviso: null });
     let imagen = a.imagen || null;
     if (imagen && !/^https?:\/\//.test(imagen)) {
