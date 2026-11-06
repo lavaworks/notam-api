@@ -1,0 +1,1 @@
+{"id":"prueba-2026-11-06","activo":true,"plataformas":["ios","android"],"titulo":"Aviso de prueba","texto":"Esto es una prueba del aviso dentro de la app. Cerralo con la X y no tiene que volver a aparecer.","imagen":"https://notam-api.onrender.com/fotos/aviones/avion_c152.jpg","boton":{"texto":"Ver la página de Oscar","link":"https://lavaworks.ar"}}
