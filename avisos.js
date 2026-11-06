@@ -18,7 +18,7 @@
 //   "plataformas": ["ios", "android"], // o sólo una
 //   "desde": "2026-12-20T00:00:00-03:00",  // opcional
 //   "hasta": "2027-01-02T00:00:00-03:00",  // opcional
-//   "titulo": "¡Felices fiestas!",
+//   "titulo": "¡Felices fiestas!",       // opcional si hay imagen
 //   "texto": "…",
 //   "imagen": "fiestas.jpg",           // opcional: archivo en avisos/img o URL
 //   "boton": { "texto": "Ver", "link": "https://…" }  // opcional
@@ -52,7 +52,9 @@ async function leer() {
 }
 
 function vigente(a, plataforma, ahora = new Date()) {
-  if (!a || a.activo === false || !a.id || !a.titulo) return false;
+  // Alcanza con título O imagen: un saludo puede ser sólo una foto
+  // (Matías, 2026-11-06: «felices fiestas» vertical sin texto ni botón).
+  if (!a || a.activo === false || !a.id || !(a.titulo || a.imagen)) return false;
   if (Array.isArray(a.plataformas) && plataforma &&
       !a.plataformas.includes(plataforma)) return false;
   if (a.desde && ahora < new Date(a.desde)) return false;
@@ -78,7 +80,7 @@ export function montar(app) {
     res.json({
       aviso: {
         id: String(a.id),
-        titulo: String(a.titulo),
+        titulo: a.titulo ? String(a.titulo) : "",
         texto: a.texto ? String(a.texto) : "",
         imagen,
         boton,
