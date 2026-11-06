@@ -1,8 +1,8 @@
 {
   "id": "fiestas-2026",
-  "activo": false,
+  "activo": true,
   "plataformas": ["ios", "android"],
   "desde": "2026-12-20T00:00:00-03:00",
   "hasta": "2027-01-07T00:00:00-03:00",
-  "imagen": "fiestas_2026.jpg"
+  "imagen": "fiestas_2026_hd.jpg"
 }
