@@ -57,6 +57,9 @@ import * as vivo from "./vivo.js";
 // Suplementos a la AIP vigentes por aeródromo (2026-10-16): pestaña
 // «Suplementos» de la hoja AIP. Sin base, como cartas.js.
 import * as suplementos from "./suplementos.js";
+// Aviso dentro de la app (2026-11-06): pop-up al abrir para comunicar
+// novedades sin sacar una versión. Lee avisos/aviso.json.
+import * as avisos from "./avisos.js";
 
 const app = express();
 // 64 kb para toda la API: los cuerpos son JSON chicos y un límite bajo es la
@@ -810,6 +813,7 @@ app.get("/health", async (req, res) => {
     logbook: logbook.estado(),
     duelos: duelos.estado(),
     vivo: vivo.estado(),
+    avisos: avisos.estado(),
     vigilancia: {
       base: alertas.activo(),
       apns: alertas.apnsConfigurado(),
@@ -824,6 +828,7 @@ suplementos.montar(app);
 logbook.montar(app);
 duelos.montar(app);
 vivo.montar(app);
+avisos.montar(app);
 
 app.get("/locations", (req, res) => {
   res.json({
