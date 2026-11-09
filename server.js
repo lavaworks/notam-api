@@ -888,6 +888,31 @@ app.get("/notams/:indicador", async (req, res) => {
   });
 });
 
+// ── Todos los NOTAM de una vez (capa «NOTAM» del mapa, 2026-11-08) ──────
+//
+// La app marca en el mapa los aeródromos con NOTAM vigentes y dibuja las
+// áreas temporales que traen coordenadas. Pedir lugar por lugar serían ~70
+// requests; el loop ya tiene todo en cache, así que se devuelve de una.
+// Sólo lo que está en cache: no dispara scrapeos.
+app.get("/notams-todos", (req, res) => {
+  const lugares = {};
+  for (const [indicador, entry] of cache) {
+    if (locations.size > 0 && !locations.has(indicador)) continue;
+    lugares[indicador] = {
+      nombre: entry.data?.nombre || locations.get(indicador) || null,
+      notams: entry.data?.notams || []
+    };
+  }
+  res.set("Cache-Control", "no-store");
+  res.json({
+    source: "ANAC AIS",
+    retrieved_at: new Date().toISOString(),
+    count: Object.keys(lugares).length,
+    lugares,
+    warning: "Información de referencia. No reemplaza briefing oficial ARO-AIS."
+  });
+});
+
 // ── Vigilancia ───────────────────────────────────────────────────────────
 //
 // La app manda SIEMPRE su lista completa de aeródromos vigilados, no altas
